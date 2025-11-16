@@ -1,0 +1,139 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Spotnere Admin - Light theme */
+    --background: 0 0% 98%;
+    --foreground: 240 10% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 15%;
+
+    --glass-bg: 0 0% 100% / 0.7;
+    --glass-border: 240 10% 90% / 0.5;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 15%;
+
+    /* Primary - Dark for buttons and accents */
+    --primary: 240 10% 10%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 220 90% 70%;
+
+    /* Secondary - Light gray */
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 10% 15%;
+
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 5% 45%;
+
+    --accent: 280 65% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 10% 90%;
+    --input: 240 10% 95%;
+    --ring: 240 10% 10%;
+
+    --radius: 0.75rem;
+
+    /* Action card colors */
+    --action-blue: 210 100% 95%;
+    --action-blue-text: 210 100% 40%;
+    --action-yellow: 45 100% 95%;
+    --action-yellow-text: 45 100% 35%;
+    --action-green: 140 60% 95%;
+    --action-green-text: 140 60% 35%;
+    --action-purple: 270 60% 95%;
+    --action-purple-text: 270 60% 40%;
+
+    /* Chart colors */
+    --chart-yellow: 45 100% 60%;
+    --chart-green: 140 60% 50%;
+    --chart-red: 0 70% 55%;
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 240 10% 15%;
+    --sidebar-primary: 240 10% 10%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 5% 96%;
+    --sidebar-accent-foreground: 240 10% 15%;
+    --sidebar-border: 240 10% 90%;
+    --sidebar-ring: 240 10% 10%;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px hsl(240 10% 10% / 0.05);
+    --shadow-md: 0 4px 6px hsl(240 10% 10% / 0.07);
+    --shadow-lg: 0 10px 15px hsl(240 10% 10% / 0.1);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    background: linear-gradient(
+      135deg,
+      hsl(0 0% 98%) 0%,
+      hsl(210 20% 96%) 50%,
+      hsl(40 20% 96%) 100%
+    );
+    background-attachment: fixed;
+  }
+
+  /* Glassmorphism utilities */
+  .glass {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(20px);
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow: var(--shadow-md);
+  }
+
+  .glass-card {
+    @apply glass rounded-xl;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--primary)) 0%,
+      hsl(var(--accent)) 100%
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+}
