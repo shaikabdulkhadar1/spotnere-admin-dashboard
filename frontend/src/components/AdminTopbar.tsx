@@ -12,6 +12,9 @@ export function AdminTopbar() {
     ? `${admin.first_name || ""} ${admin.last_name || ""}`.trim() || "Admin"
     : "Admin";
 
+  // Get role from admin context
+  const adminRole = admin?.role || "Store Manager";
+
   // Get initials for avatar fallback
   const getInitials = () => {
     if (!admin) return "A";
@@ -64,7 +67,9 @@ export function AdminTopbar() {
               <p className="text-sm font-medium text-foreground">
                 {isLoading ? "Loading..." : adminName}
               </p>
-              <p className="text-xs text-muted-foreground">{admin.role}</p>
+              <p className="text-xs text-muted-foreground">
+                {isLoading ? "Loading..." : adminRole}
+              </p>
             </div>
           </div>
         </div>

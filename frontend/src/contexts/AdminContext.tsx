@@ -20,6 +20,7 @@ interface Admin {
   state?: string;
   country?: string;
   postal_code?: string;
+  role?: string;
   [key: string]: any; // Allow additional fields
 }
 

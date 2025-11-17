@@ -1,20 +1,25 @@
 import { motion } from "framer-motion";
 import { LucideIcon, TrendingUp, TrendingDown } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface StatCardProps {
   title: string;
+  description: string;
   value: string | number;
   change?: string;
   icon: LucideIcon;
   trend?: "up" | "down" | "neutral";
+  isLoading?: boolean;
 }
 
 export function StatCard({
   title,
+  description,
   value,
   change,
   icon: Icon,
   trend = "neutral",
+  isLoading = false,
 }: StatCardProps) {
   const trendColor = {
     up: "text-green-600",
@@ -34,19 +39,30 @@ export function StatCard({
       className="bg-card rounded-xl border border-border p-6 "
     >
       <div className="flex items-start justify-between mb-4">
-        <p className="text-sm text-muted-foreground">{title}</p>
+        <div>
+          <p className="text-md font-bold text-muted-foreground">{title}</p>
+          <p className="text-xs text-muted-foreground">{description}</p>
+        </div>
         <Icon className="w-5 h-5 text-muted-foreground" />
       </div>
 
-      <h3 className="text-3xl font-bold mb-2">{value}</h3>
-
-      {change && (
-        <div className="flex items-center gap-1">
-          {TrendIcon && (
-            <TrendIcon className={`w-3 h-3 ${trendColor[trend]}`} />
-          )}
-          <p className={`text-sm ${trendColor[trend]}`}>{change}</p>
+      {isLoading ? (
+        <div className="space-y-2 mb-2">
+          <Skeleton className="h-9 w-24" />
+          {change && <Skeleton className="h-4 w-32" />}
         </div>
+      ) : (
+        <>
+          <h3 className="text-3xl font-bold mb-2">{value}</h3>
+          {change && (
+            <div className="flex items-center gap-1">
+              {TrendIcon && (
+                <TrendIcon className={`w-3 h-3 ${trendColor[trend]}`} />
+              )}
+              <p className={`text-sm ${trendColor[trend]}`}>{change}</p>
+            </div>
+          )}
+        </>
       )}
     </motion.div>
   );

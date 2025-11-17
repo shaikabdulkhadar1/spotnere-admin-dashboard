@@ -402,6 +402,149 @@ async def get_admin_by_email(email: str):
         )
 
 
+# Get total count of places from Supabase
+@app.get("/api/places/count")
+async def get_places_count():
+    """
+    Get the total count of places in the database.
+    
+    Returns:
+        dict: A dictionary with the total count of places
+    """
+    try:
+        # Use count() with limit(0) to get only the count without fetching any data
+        print("Fetching places count from Supabase")
+        response = supabase.table("places").select("*", count="exact").limit(0).execute()
+        
+        # The count is available in response.count
+        # If count is not available, try to get it from the response
+        if hasattr(response, 'count') and response.count is not None:
+            count = response.count
+        elif hasattr(response, 'data') and response.data is not None:
+            # Fallback: count the data if available (though with limit(0) this should be empty)
+            count = len(response.data) if isinstance(response.data, list) else 0
+        else:
+            count = 0
+        
+        return {"count": count}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching places count: {str(e)}"
+        )
+
+
+# Get count of unique countries from places table
+@app.get("/api/places/countries/count")
+async def get_countries_count():
+    """
+    Get the count of unique countries in the places table.
+    
+    Returns:
+        dict: A dictionary with the count of unique countries
+    """
+    try:
+        print("Fetching countries count from Supabase")
+        # Get distinct countries from places table
+        # Using select with distinct on country field
+        response = supabase.table("places").select("country").execute()
+        
+        if not response.data:
+            return {"count": 0}
+        
+        # Extract unique countries (filter out None/null values)
+        countries = set()
+        for place in response.data:
+            if place.get("country") and place["country"].strip():
+                countries.add(place["country"].strip())
+        
+        count = len(countries)
+        return {"count": count}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching countries count: {str(e)}"
+        )
+
+
+# Get average rating from places table
+@app.get("/api/places/rating/average")
+async def get_average_rating():
+    """
+    Get the average rating from all places in the database.
+    
+    Returns:
+        dict: A dictionary with the average rating
+    """
+    try:
+        print("Fetching average rating from Supabase")
+        # Get all places with ratings
+        response = supabase.table("places").select("rating").execute()
+        
+        if not response.data:
+            return {"average": 0.0}
+        
+        # Calculate average rating (filter out None/null values)
+        ratings = []
+        for place in response.data:
+            rating = place.get("rating")
+            if rating is not None:
+                try:
+                    # Convert to float if it's a string
+                    rating_float = float(rating)
+                    ratings.append(rating_float)
+                except (ValueError, TypeError):
+                    continue
+        
+        if not ratings:
+            return {"average": 0.0}
+        
+        average = sum(ratings) / len(ratings)
+        # Round to 2 decimal places
+        average = round(average, 2)
+        
+        return {"average": average}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching average rating: {str(e)}"
+        )
+
+
+# Get total count of users/customers
+@app.get("/api/users/count")
+async def get_users_count():
+    """
+    Get the total count of users/customers in the database.
+    
+    Returns:
+        dict: A dictionary with the total count of users
+    """
+    try:
+        print("Fetching users count from Supabase")
+        # Use count() with limit(0) to get only the count without fetching any data
+        response = supabase.table("users").select("*", count="exact").limit(0).execute()
+        
+        # The count is available in response.count
+        if hasattr(response, 'count') and response.count is not None:
+            count = response.count
+        elif hasattr(response, 'data') and response.data is not None:
+            count = len(response.data) if isinstance(response.data, list) else 0
+        else:
+            count = 0
+        
+        return {"count": count}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching users count: {str(e)}"
+        )
+
+
 # Get all places from Supabase
 @app.get("/api/places", response_model=List[Place])
 async def get_all_places():
@@ -429,7 +572,7 @@ async def get_all_places():
         
     except Exception as e:
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching places: {str(e)}"
         )
 
