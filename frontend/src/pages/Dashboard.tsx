@@ -1,23 +1,11 @@
 import { motion } from "framer-motion";
+import { useEffect } from "react";
 import { StatCard } from "@/components/StatCard";
 import { ActionCard } from "@/components/ActionCard";
 import { CustomerInsights } from "@/components/CustomerInsights";
 import { SalesChart } from "@/components/SalesChart";
-import {
-  DollarSign,
-  ShoppingCart,
-  TrendingUp,
-  Percent,
-  Eye,
-  Tag,
-  Mail,
-  Megaphone,
-  Gift,
-  Plus,
-  Users,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { DollarSign, ShoppingCart, TrendingUp, Users } from "lucide-react";
+import { useAdmin } from "@/contexts/AdminContext";
 
 const stats = [
   {
@@ -50,16 +38,18 @@ const stats = [
   },
 ];
 
-const promotions = [
-  { name: "Holiday Sale", code: "234 used", status: "Active" as const },
-  {
-    name: "New Customer Welcome",
-    campaign: "89% open rate",
-    status: "Running" as const,
-  },
-];
-
 export default function Dashboard() {
+  const { admin, isLoading, refreshAdmin } = useAdmin();
+
+  // Ensure admin data is fetched when dashboard loads
+  useEffect(() => {
+    const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
+    if (isAuthenticated && !isLoading && !admin) {
+      // If authenticated but no admin data, trigger a refresh
+      refreshAdmin();
+    }
+  }, [admin, isLoading, refreshAdmin]);
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-start justify-between mb-6">
@@ -69,10 +59,6 @@ export default function Dashboard() {
             Welcome back! Here's what's happening with your store today.
           </p>
         </div>
-        <Button className="bg-black text-white hover:bg-gray-900 rounded-lg gap-2 mt-1">
-          <Plus className="w-4 h-4" />
-          New Order
-        </Button>
       </div>
 
       {/* Data Overview Cards - 4 cards in one row */}

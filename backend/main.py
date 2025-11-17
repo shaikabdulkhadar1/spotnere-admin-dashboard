@@ -1,6 +1,13 @@
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from supabase import create_client, Client
+from supabase import (
+    create_client,
+    Client,
+    AuthApiError,
+    AuthError,
+    AuthInvalidCredentialsError,
+    AuthSessionMissingError,
+)
 from pydantic import BaseModel, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
 import os
@@ -111,7 +118,7 @@ async def health_check():
 @app.post("/api/auth/login", response_model=AuthResponse)
 async def login(credentials: LoginRequest):
     """
-    Login endpoint for user authentication.
+    Login endpoint for user authentication using Supabase Auth.
     
     Args:
         credentials: Login credentials (email and password)
@@ -120,46 +127,126 @@ async def login(credentials: LoginRequest):
         AuthResponse: Authentication response with user data and tokens
     """
     try:
+        
         # Authenticate user with Supabase Auth
-        response = supabase.auth.sign_in_with_password({
+        # This uses the Supabase Auth table for authentication
+        auth_response = supabase.auth.sign_in_with_password({
             "email": credentials.email,
             "password": credentials.password
         })
         
-        if not response.user:
+        
+        # Check if authentication was successful
+        if not auth_response.user:
+            print("Authentication failed: No user in response")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
         
-        # Get user data from users table if it exists
+        # Check if session exists (required for tokens)
+        if not auth_response.session:
+            print("Authentication failed: No session in response")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication failed: No session created. Please check if email is confirmed."
+            )
+        
+        
+        # Get user data from admins table
         user_data = None
         try:
-            user_profile = supabase.table("admins").select("*").eq("email", credentials.email).execute()
-            if user_profile.data:
-                user_data = user_profile.data[0]
-        except Exception:
-            # If users table doesn't exist or query fails, use auth user data
+            admin_profile = supabase.table("admins").select("*").eq("email", credentials.email).execute()
+            if admin_profile.data and len(admin_profile.data) > 0:
+                user_data = admin_profile.data[0]
+            else:
+                # If admin profile doesn't exist, create basic user data from auth
+                print("No admin profile found, using auth user data")
+                user_data = {
+                    "id": auth_response.user.id,
+                    "email": auth_response.user.email,
+                }
+        except Exception as profile_error:
+            # If admins table query fails, use auth user data
+            print(f"Error fetching admin profile: {profile_error}")
             user_data = {
-                "id": response.user.id,
-                "email": response.user.email,
+                "id": auth_response.user.id,
+                "email": auth_response.user.email,
             }
         
         return AuthResponse(
             success=True,
             message="Login successful",
             user=user_data,
-            access_token=response.session.access_token if response.session else None,
-            refresh_token=response.session.refresh_token if response.session else None
+            access_token=auth_response.session.access_token,
+            refresh_token=auth_response.session.refresh_token
         )
         
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except (AuthInvalidCredentialsError, AuthApiError) as e:
+        # Handle Supabase authentication errors
+        error_message = str(e)
+        print(f"Supabase Auth error: {error_message}")
+        print(f"Error type: {type(e).__name__}")
+        
+        # Check for specific error messages
+        error_lower = error_message.lower()
+        if "email not confirmed" in error_lower or "email_not_confirmed" in error_lower:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Please confirm your email before logging in"
+            )
+        
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+    except AuthSessionMissingError as e:
+        print(f"Session missing error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed: No session created. Please check if email is confirmed."
+        )
+    except AuthError as e:
+        error_message = str(e)
+        print(f"General Auth error: {error_message}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Authentication error: {error_message}"
+        )
     except Exception as e:
         error_message = str(e)
-        if "Invalid login credentials" in error_message or "Email not confirmed" in error_message:
+        error_type = type(e).__name__
+        print(f"Login error (type: {error_type}): {error_message}")
+        print(f"Full error: {repr(e)}")
+        
+        # Handle specific error messages in case exception type wasn't caught
+        error_lower = error_message.lower()
+        
+        if "invalid login credentials" in error_lower or "invalid_credentials" in error_lower:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
+        if "email not confirmed" in error_lower or "email_not_confirmed" in error_lower:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Please confirm your email before logging in"
+            )
+        if "invalid password" in error_lower:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        if "user not found" in error_lower or "user_not_found" in error_lower:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        
+        # Generic error response
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error during login: {error_message}"
@@ -252,6 +339,66 @@ async def signup(user_data: SignupRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error during signup: {error_message}"
+        )
+
+
+@app.get("/api/admins/{admin_id}")
+async def get_admin_by_id(admin_id: str):
+    """
+    Get admin details by ID.
+    
+    Args:
+        admin_id: The admin user ID
+    
+    Returns:
+        Admin data from the admins table
+    """
+    try:
+        admin_response = supabase.table("admins").select("*").eq("id", admin_id).execute()
+        
+        if not admin_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Admin not found"
+            )
+        
+        return admin_response.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching admin: {str(e)}"
+        )
+
+
+@app.get("/api/admins/email/{email}")
+async def get_admin_by_email(email: str):
+    """
+    Get admin details by email.
+    
+    Args:
+        email: The admin email address
+    
+    Returns:
+        Admin data from the admins table
+    """
+    try:
+        admin_response = supabase.table("admins").select("*").eq("email", email).execute()
+        
+        if not admin_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Admin not found"
+            )
+        
+        return admin_response.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching admin: {str(e)}"
         )
 
 

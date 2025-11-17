@@ -299,6 +299,9 @@ export default function Login() {
           localStorage.setItem("user", JSON.stringify(data.user));
         }
 
+        // Dispatch custom event to trigger context refetch
+        window.dispatchEvent(new Event("auth-state-changed"));
+
         toast({
           title: "Success",
           description: "Login successful",
@@ -309,11 +312,16 @@ export default function Login() {
         throw new Error("Login failed");
       }
     } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "An error occurred during login";
       toast({
         title: "Error",
-        description: "An error occurred during login",
+        description: errorMessage,
         variant: "destructive",
       });
+      console.error("Login error:", error);
     } finally {
       setIsLoading(false);
     }
@@ -392,6 +400,9 @@ export default function Login() {
         if (data.user) {
           localStorage.setItem("user", JSON.stringify(data.user));
         }
+
+        // Dispatch custom event to trigger context refetch
+        window.dispatchEvent(new Event("auth-state-changed"));
 
         toast({
           title: "Success",

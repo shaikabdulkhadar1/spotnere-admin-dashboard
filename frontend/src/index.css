@@ -83,7 +83,7 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-foreground antialiased font-sans;
     background: linear-gradient(
       135deg,
       hsl(0 0% 98%) 0%,
@@ -91,6 +91,17 @@ All colors MUST be HSL.
       hsl(40 20% 96%) 100%
     );
     background-attachment: fixed;
+    font-family: "Parkinsans", sans-serif;
+  }
+
+  /* Poppins font for headings */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Poppins", sans-serif;
   }
 
   /* Glassmorphism utilities */

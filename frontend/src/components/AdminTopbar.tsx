@@ -2,8 +2,23 @@ import { Bell, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useAdmin } from "@/contexts/AdminContext";
 
 export function AdminTopbar() {
+  const { admin, isLoading } = useAdmin();
+
+  // Get admin name or fallback
+  const adminName = admin
+    ? `${admin.first_name || ""} ${admin.last_name || ""}`.trim() || "Admin"
+    : "Admin";
+
+  // Get initials for avatar fallback
+  const getInitials = () => {
+    if (!admin) return "A";
+    const first = admin.first_name?.[0] || "";
+    const last = admin.last_name?.[0] || "";
+    return (first + last).toUpperCase() || "A";
+  };
   return (
     <header className="sticky top-0 z-30 bg-[#F4F5F5]">
       <div className="flex items-center justify-between px-6 py-4">
@@ -36,18 +51,20 @@ export function AdminTopbar() {
           <div className="flex items-center gap-3 border border-[#FFFFFF] bg-[#FFFFFF] rounded-full h-14 p-6 shadow-lg">
             <Avatar className="w-10 h-10">
               <AvatarImage
-                src="https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah"
-                alt="Sarah Johnson"
+                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${
+                  admin?.email || "admin"
+                }`}
+                alt={adminName}
               />
               <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white text-sm">
-                SJ
+                {getInitials()}
               </AvatarFallback>
             </Avatar>
             <div className="text-left hidden md:block">
               <p className="text-sm font-medium text-foreground">
-                Sarah Johnson
+                {isLoading ? "Loading..." : adminName}
               </p>
-              <p className="text-xs text-muted-foreground">Store Manager</p>
+              <p className="text-xs text-muted-foreground">{admin.role}</p>
             </div>
           </div>
         </div>
