@@ -13,12 +13,11 @@ import { AdminSidebar } from "@/components/AdminSidebar";
 import { AdminTopbar } from "@/components/AdminTopbar";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdminProvider } from "@/contexts/AdminContext";
+import { AccessControlProvider } from "@/contexts/AccessControlContext";
 import Dashboard from "./pages/Dashboard";
-import Places from "./pages/Places";
-import Cities from "./pages/Cities";
-import Users from "./pages/Users";
-import Bookings from "./pages/Bookings";
 import Login from "./pages/Login";
+import NotFound from "./pages/NotFound";
+import Listing from "./pages/Listing";
 
 const queryClient = new QueryClient();
 
@@ -40,27 +39,22 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <AdminProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Login />} />
-            <Route element={<ProtectedRoute />}>
-              <Route element={<AdminLayout />}>
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/places" element={<Places />} />
-                <Route path="/cities" element={<Cities />} />
-                <Route path="/users" element={<Users />} />
-                <Route path="/bookings" element={<Bookings />} />
-                <Route path="/categories" element={<Dashboard />} />
-                <Route path="/hosts" element={<Dashboard />} />
-                <Route path="/reviews" element={<Dashboard />} />
-                <Route path="/promotions" element={<Dashboard />} />
-                <Route path="/settings" element={<Dashboard />} />
+        <AccessControlProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Login />} />
+              <Route element={<ProtectedRoute />}>
+                <Route element={<AdminLayout />}>
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/listings" element={<Listing />} />
+                </Route>
               </Route>
-            </Route>
-          </Routes>
-        </BrowserRouter>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </AccessControlProvider>
       </AdminProvider>
     </TooltipProvider>
   </QueryClientProvider>

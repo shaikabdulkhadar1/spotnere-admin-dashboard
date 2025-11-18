@@ -26,10 +26,16 @@ app = FastAPI(
 # CORS middleware to allow frontend to connect
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://localhost:5173"],  # Add your frontend URLs
+    allow_origins=[
+        "http://localhost:8080",
+        "http://localhost:5173",
+        "http://127.0.0.1:8080",
+        "http://127.0.0.1:5173",
+    ],  # Add your frontend URLs
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Supabase configuration
@@ -545,6 +551,41 @@ async def get_users_count():
         )
 
 
+# Get a single place by ID
+@app.get("/api/places/{place_id}", response_model=Place)
+async def get_place_by_id(place_id: str):
+    """
+    Retrieve a single place by ID from the Supabase database.
+    
+    Args:
+        place_id: The UUID of the place to retrieve
+        
+    Returns:
+        Place: The place object
+    """
+    try:
+        # Query the places table from Supabase
+        response = supabase.table("places").select("*").eq("id", place_id).execute()
+        
+        if not response.data or len(response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Place with id {place_id} not found"
+            )
+        
+        # Convert to Place model
+        place = Place(**response.data[0])
+        return place
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching place: {str(e)}"
+        )
+
+
 # Get all places from Supabase
 @app.get("/api/places", response_model=List[Place])
 async def get_all_places():
@@ -574,6 +615,180 @@ async def get_all_places():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching places: {str(e)}"
+        )
+
+
+# Update a place
+@app.put("/api/places/{place_id}", response_model=Place)
+async def update_place(place_id: str, place_data: Place):
+    """
+    Update a place in the database.
+    
+    Args:
+        place_id: The UUID of the place to update
+        place_data: The Place model with updated fields
+        
+    Returns:
+        Place: The updated place object
+    """
+    try:
+        # First, check if place exists
+        check_response = supabase.table("places").select("id").eq("id", place_id).execute()
+        
+        if not check_response.data or len(check_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Place with id {place_id} not found"
+            )
+        
+        # Convert Pydantic model to dict, excluding None values and id
+        update_dict = place_data.model_dump(exclude={"id", "created_at", "updated_at"}, exclude_none=True)
+        
+        # Update the place
+        update_response = supabase.table("places").update(update_dict).eq("id", place_id).execute()
+        
+        # Fetch the complete updated place data
+        full_place_response = supabase.table("places").select("*").eq("id", place_id).execute()
+        
+        if not full_place_response.data or len(full_place_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to fetch updated place data"
+            )
+        
+        # Return the updated place
+        updated_place_data = full_place_response.data[0]
+        updated_place = Place(**updated_place_data)
+        return updated_place
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"Error traceback: {error_traceback}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating place: {str(e)}"
+        )
+
+
+# Toggle visibility of a place
+@app.patch("/api/places/{place_id}/toggle-visibility", response_model=Place)
+async def toggle_place_visibility(place_id: str):
+    """
+    Toggle the visibility status of a place.
+    Switches the visible column value: true -> false, false -> true, null -> true
+    
+    Args:
+        place_id: The UUID of the place to toggle
+        
+    Returns:
+        Place: The updated place object
+    """
+    try:
+        # First, check if place exists and get current visibility status
+        current_place_response = supabase.table("places").select("visible, id").eq("id", place_id).execute()
+        
+        if not current_place_response.data or len(current_place_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Place with id {place_id} not found"
+            )
+        
+        # Get current visibility status
+        current_visible = current_place_response.data[0].get("visible")
+        print(f"Current visibility status: {current_visible}, type: {type(current_visible)}")
+        
+        # Toggle: switch the value regardless of current state
+        # True -> False, False/None -> True
+        if current_visible is True:
+            new_visible = False
+        else:
+            # Handles False, None, or any other falsy value
+            new_visible = True
+        
+        print(f"New visibility status: {new_visible}")
+        
+        # Update the visibility status
+        update_response = supabase.table("places").update({"visible": new_visible}).eq("id", place_id).execute()
+        print(f"Update response type: {type(update_response)}")
+        print(f"Update response data: {update_response.data if hasattr(update_response, 'data') else 'No data attr'}")
+        
+        # Fetch the complete updated place data (always fetch after update to ensure we have latest)
+        full_place_response = supabase.table("places").select("*").eq("id", place_id).execute()
+        
+        if not full_place_response.data or len(full_place_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to fetch updated place data"
+            )
+        
+        # Return the updated place
+        updated_place_data = full_place_response.data[0]
+        print(f"Updated place data keys: {updated_place_data.keys()}")
+        updated_place = Place(**updated_place_data)
+        return updated_place
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"Error traceback: {error_traceback}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error toggling place visibility: {str(e)}"
+        )
+
+
+# Delete a place
+@app.delete("/api/places/{place_id}")
+async def delete_place(place_id: str):
+    """
+    Delete a place from the database.
+    
+    Args:
+        place_id: The UUID of the place to delete
+        
+    Returns:
+        dict: A success message
+    """
+    try:
+        # First, check if place exists
+        check_response = supabase.table("places").select("id").eq("id", place_id).execute()
+        
+        if not check_response.data or len(check_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Place with id {place_id} not found"
+            )
+        
+        # Delete the place
+        delete_response = supabase.table("places").delete().eq("id", place_id).execute()
+        
+        # Check if deletion was successful
+        # Supabase delete returns the deleted rows
+        if delete_response.data is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete place"
+            )
+        
+        return {
+            "success": True,
+            "message": f"Place {place_id} deleted successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"Error traceback: {error_traceback}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting place: {str(e)}"
         )
 
 

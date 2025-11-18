@@ -24,18 +24,7 @@ export function AdminTopbar() {
   };
   return (
     <header className="sticky top-0 z-30 bg-[#F4F5F5]">
-      <div className="flex items-center justify-between px-6 py-4">
-        {/* Centered Search Bar */}
-        <div className="flex-1 flex justify-left max-w-xl mx-auto">
-          <div className="relative w-full">
-            <Input
-              placeholder="Search products, orders, customers..."
-              className="pr-10 border border-[#FFFFFF] bg-[#FFFFFF] rounded-full h-14 shadow-lg"
-            />
-            <Search className="absolute right-6 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          </div>
-        </div>
-
+      <div className="flex items-center justify-end px-6 py-4">
         {/* Right side: Notifications and User Profile */}
         <div className="flex items-center gap-4 ml-4">
           {/* Bell with yellow badge */}

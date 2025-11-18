@@ -1,0 +1,701 @@
+import { useEffect, useState, useMemo } from "react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+import {
+  Search,
+  MapPin,
+  Star,
+  Eye,
+  EyeOff,
+  Edit,
+  Trash2,
+  Filter,
+  X,
+  Loader2,
+} from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useAdmin } from "@/contexts/AdminContext";
+import { useAccessControl } from "@/contexts/AccessControlContext";
+import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { EditPlaceModal } from "@/components/EditPlaceModal";
+
+const API_URL = import.meta.env.VITE_API_URL;
+
+interface Place {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  rating: number;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  postal_code?: string;
+  avg_price: number;
+  review_count: number;
+  open_now: boolean;
+  visible?: boolean;
+  banner_image_link?: string;
+  latitude?: number;
+  longitude?: number;
+  hours?: any[];
+  amenities?: string[];
+  tags?: string[];
+  website?: string;
+  phone_number?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+const ITEMS_PER_PAGE = 10;
+
+export default function Listing() {
+  const { admin, isLoading: isLoadingAdmin, refreshAdmin } = useAdmin();
+  const { adminRole, hasRole, hasAnyRole, isAdmin } = useAccessControl();
+  const { toast } = useToast();
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [countryFilter, setCountryFilter] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [togglingPlaceId, setTogglingPlaceId] = useState<string | null>(null);
+  const [deletingPlaceId, setDeletingPlaceId] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [placeToDelete, setPlaceToDelete] = useState<Place | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingPlaceId, setEditingPlaceId] = useState<string | null>(null);
+
+  // Ensure admin data is fetched when component mounts
+  useEffect(() => {
+    const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
+    if (isAuthenticated && !isLoadingAdmin && !admin) {
+      refreshAdmin();
+    }
+  }, [admin, isLoadingAdmin, refreshAdmin]);
+
+  // Log role information for debugging
+  useEffect(() => {
+    if (adminRole) {
+      console.log("Admin Role:", adminRole);
+      console.log("Is Admin:", isAdmin);
+      console.log(
+        "Access control functions available: hasRole(), hasAnyRole(), isAdmin"
+      );
+    }
+  }, [adminRole, isAdmin]);
+
+  // Handle edit click - open modal
+  const handleEditClick = (placeId: string) => {
+    setEditingPlaceId(placeId);
+    setEditDialogOpen(true);
+  };
+
+  // Handle delete confirmation dialog
+  const handleDeleteClick = (place: Place) => {
+    setPlaceToDelete(place);
+    setDeleteDialogOpen(true);
+  };
+
+  // Handle delete place
+  const handleDeletePlace = async () => {
+    if (!placeToDelete) return;
+
+    try {
+      setDeletingPlaceId(placeToDelete.id);
+      const accessToken = localStorage.getItem("access_token");
+      const response = await fetch(
+        `${API_URL}/api/places/${placeToDelete.id}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.ok) {
+        toast({
+          title: "Place Deleted",
+          description: `${placeToDelete.name} has been deleted successfully`,
+        });
+
+        setDeleteDialogOpen(false);
+        setPlaceToDelete(null);
+
+        // Refresh the page to reload data
+        window.location.reload();
+      } else {
+        const errorData = await response.json().catch(() => ({
+          detail: "Failed to delete place",
+        }));
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: errorData.detail || "Failed to delete place",
+        });
+      }
+    } catch (error) {
+      console.error("Error deleting place:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "An error occurred while deleting the place",
+      });
+    } finally {
+      setDeletingPlaceId(null);
+    }
+  };
+
+  // Handle toggle visibility
+  const handleToggleVisibility = async (placeId: string) => {
+    try {
+      setTogglingPlaceId(placeId);
+      const accessToken = localStorage.getItem("access_token");
+      const response = await fetch(
+        `${API_URL}/api/places/${placeId}/toggle-visibility`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.ok) {
+        const updatedPlace = await response.json();
+
+        // Update the place in local state immediately
+        setPlaces((prevPlaces) =>
+          prevPlaces.map((place) =>
+            place.id === placeId
+              ? { ...place, ...updatedPlace } // Merge to preserve all fields
+              : place
+          )
+        );
+
+        toast({
+          title: "Visibility Updated",
+          description: `Place is now ${
+            updatedPlace.visible !== false ? "Visible" : "Hidden"
+          }`,
+        });
+      } else {
+        const errorData = await response.json().catch(() => ({
+          detail: "Failed to toggle visibility",
+        }));
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: errorData.detail || "Failed to toggle place visibility",
+        });
+      }
+    } catch (error) {
+      console.error("Error toggling place visibility:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "An error occurred while toggling place visibility",
+      });
+    } finally {
+      setTogglingPlaceId(null);
+    }
+  };
+
+  // Fetch places from API
+  useEffect(() => {
+    const fetchPlaces = async () => {
+      try {
+        setIsLoading(true);
+        const accessToken = localStorage.getItem("access_token");
+        const response = await fetch(`${API_URL}/api/places`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setPlaces(data || []);
+        } else {
+          console.error("Failed to fetch places");
+          setPlaces([]);
+        }
+      } catch (error) {
+        console.error("Error fetching places:", error);
+        setPlaces([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchPlaces();
+  }, []);
+
+  // Get unique categories and countries for filters
+  const categories = useMemo(() => {
+    const cats = new Set<string>();
+    places.forEach((place) => {
+      if (place.category) cats.add(place.category);
+    });
+    return Array.from(cats).sort();
+  }, [places]);
+
+  const countries = useMemo(() => {
+    const countriesSet = new Set<string>();
+    places.forEach((place) => {
+      if (place.country) countriesSet.add(place.country);
+    });
+    return Array.from(countriesSet).sort();
+  }, [places]);
+
+  // Filter places based on search and filters
+  const filteredPlaces = useMemo(() => {
+    return places.filter((place) => {
+      const matchesSearch =
+        searchQuery === "" ||
+        place.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        place.address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        place.city?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        place.country?.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesCategory =
+        categoryFilter === "all" || place.category === categoryFilter;
+
+      const matchesCountry =
+        countryFilter === "all" || place.country === countryFilter;
+
+      return matchesSearch && matchesCategory && matchesCountry;
+    });
+  }, [places, searchQuery, categoryFilter, countryFilter]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredPlaces.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const paginatedPlaces = filteredPlaces.slice(startIndex, endIndex);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, categoryFilter, countryFilter]);
+
+  const handleClearFilters = () => {
+    setSearchQuery("");
+    setCategoryFilter("all");
+    setCountryFilter("all");
+  };
+
+  const hasActiveFilters =
+    searchQuery !== "" || categoryFilter !== "all" || countryFilter !== "all";
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-3xl font-bold text-foreground">Listings</h1>
+            {adminRole && (
+              <Badge variant="outline" className="text-xs">
+                Role: {adminRole}
+              </Badge>
+            )}
+          </div>
+          <p className="text-muted-foreground text-sm">
+            Manage and view all your venue listings
+          </p>
+        </div>
+        <Button className="gap-2">
+          <MapPin className="h-4 w-4" />
+          Add New Listing
+        </Button>
+      </div>
+
+      {/* Filters and Search */}
+      <div className="bg-card rounded-xl border border-border p-4">
+        <div className="flex flex-col md:flex-row gap-4">
+          {/* Search */}
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, address, city, or country..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          {/* Category Filter */}
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-full md:w-[200px]">
+              <Filter className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat} value={cat}>
+                  {cat}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Country Filter */}
+          <Select value={countryFilter} onValueChange={setCountryFilter}>
+            <SelectTrigger className="w-full md:w-[200px]">
+              <MapPin className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Country" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Countries</SelectItem>
+              {countries.map((country) => (
+                <SelectItem key={country} value={country}>
+                  {country}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Clear Filters */}
+          {hasActiveFilters && (
+            <Button
+              variant="outline"
+              onClick={handleClearFilters}
+              className="gap-2"
+            >
+              <X className="h-4 w-4" />
+              Clear
+            </Button>
+          )}
+        </div>
+
+        {/* Results count */}
+        <div className="mt-4 text-sm text-muted-foreground">
+          Showing {paginatedPlaces.length} of {filteredPlaces.length} listings
+          {hasActiveFilters && " (filtered)"}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[300px]">Name</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead className="text-center">Rating</TableHead>
+                <TableHead className="text-right">Price</TableHead>
+                <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                // Loading skeleton
+                Array.from({ length: 5 }).map((_, index) => (
+                  <TableRow key={index}>
+                    <TableCell>
+                      <Skeleton className="h-4 w-[200px]" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-[100px]" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-[150px]" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-[60px] mx-auto" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-[80px] ml-auto" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-[80px] mx-auto" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-[120px] ml-auto" />
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : paginatedPlaces.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8">
+                    <div className="flex flex-col items-center gap-2">
+                      <MapPin className="h-12 w-12 text-muted-foreground" />
+                      <p className="text-muted-foreground">
+                        No listings found
+                        {hasActiveFilters && ". Try adjusting your filters."}
+                      </p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedPlaces.map((place) => (
+                  <TableRow key={place.id}>
+                    <TableCell className="font-medium">
+                      <div className="flex flex-col">
+                        <span className="font-semibold">
+                          {place.name || "N/A"}
+                        </span>
+                        {place.description && (
+                          <span className="text-xs text-muted-foreground line-clamp-1">
+                            {place.description}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">
+                        {place.category || "Uncategorized"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col text-sm">
+                        <span className="font-medium">
+                          {place.city || "N/A"}
+                          {place.state && `, ${place.state}`}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {place.country || "N/A"}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                        <span className="font-medium">
+                          {place.rating?.toFixed(1) || "0.0"}
+                        </span>
+                        {place.review_count && (
+                          <span className="text-xs text-muted-foreground">
+                            ({place.review_count})
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {place.avg_price ? (
+                        <span className="font-medium">
+                          ${place.avg_price.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">N/A</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge
+                        variant={
+                          place.visible !== false ? "default" : "outline"
+                        }
+                        className={
+                          place.visible !== false
+                            ? "bg-green-500 text-white"
+                            : "bg-gray-200 text-gray-700"
+                        }
+                      >
+                        {place.visible !== false ? "Visible" : "Hidden"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title={
+                            place.visible === false
+                              ? "Make Visible"
+                              : "Make Hidden"
+                          }
+                          onClick={() => handleToggleVisibility(place.id)}
+                          disabled={togglingPlaceId === place.id}
+                        >
+                          {togglingPlaceId === place.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : place.visible === false ? (
+                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title="Edit"
+                          onClick={() => handleEditClick(place.id)}
+                          disabled={editingPlaceId === place.id}
+                        >
+                          {editingPlaceId === place.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Edit className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          title="Delete"
+                          onClick={() => handleDeleteClick(place)}
+                          disabled={deletingPlaceId === place.id}
+                        >
+                          {deletingPlaceId === place.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* Pagination */}
+        {!isLoading && filteredPlaces.length > 0 && totalPages > 1 && (
+          <div className="border-t border-border p-4">
+            <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    onClick={() =>
+                      setCurrentPage((prev) => Math.max(1, prev - 1))
+                    }
+                    className={
+                      currentPage === 1
+                        ? "pointer-events-none opacity-50"
+                        : "cursor-pointer"
+                    }
+                  />
+                </PaginationItem>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                  (page) => (
+                    <PaginationItem key={page}>
+                      <PaginationLink
+                        onClick={() => setCurrentPage(page)}
+                        isActive={currentPage === page}
+                        className="cursor-pointer"
+                      >
+                        {page}
+                      </PaginationLink>
+                    </PaginationItem>
+                  )
+                )}
+                <PaginationItem>
+                  <PaginationNext
+                    onClick={() =>
+                      setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                    }
+                    className={
+                      currentPage === totalPages
+                        ? "pointer-events-none opacity-50"
+                        : "cursor-pointer"
+                    }
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        )}
+      </div>
+
+      {/* Edit Place Modal */}
+      <EditPlaceModal
+        placeId={editingPlaceId}
+        open={editDialogOpen}
+        onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          if (!open) {
+            setEditingPlaceId(null);
+          }
+        }}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete{" "}
+              <span className="font-semibold">
+                {placeToDelete?.name || "this place"}
+              </span>{" "}
+              from the database.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setPlaceToDelete(null);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeletePlace}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deletingPlaceId !== null}
+            >
+              {deletingPlaceId ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}

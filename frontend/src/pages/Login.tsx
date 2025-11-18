@@ -23,8 +23,7 @@ import {
 } from "lucide-react";
 
 const API_URL = import.meta.env.VITE_API_URL;
-const COUNTRIES_API =
-  import.meta.env.VITE_COUNTRIES_API || "https://countriesnow.space/api/v0.1";
+const COUNTRIES_API = import.meta.env.VITE_COUNTRIES_API;
 
 interface CountryPosition {
   name: string;
