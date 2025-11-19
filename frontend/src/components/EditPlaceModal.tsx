@@ -596,27 +596,6 @@ export function EditPlaceModal({
               />
             )}
 
-            {/* Debug: simple file input to verify onChange */}
-            <div className="space-y-2 border border-dashed border-gray-300 p-3 rounded-md bg-white/60">
-              <Label>Debug File Input (raw)</Label>
-              <input
-                type="file"
-                onChange={(e) => {
-                  console.log(
-                    "[EditPlaceModal DebugFileInput] onChange fired",
-                    {
-                      files: e.target.files,
-                      fileCount: e.target.files?.length,
-                    }
-                  );
-                }}
-              />
-              <p className="text-xs text-muted-foreground">
-                This is a temporary debug input to confirm that file input
-                change events work correctly inside the modal.
-              </p>
-            </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Name</Label>

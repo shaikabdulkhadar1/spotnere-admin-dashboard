@@ -78,6 +78,29 @@ class AuthResponse(BaseModel):
 
 # Pydantic models for response
 # Matches the exact database schema from Supabase
+class Customer(BaseModel):
+    id: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+    password_hash: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+    postal_code: Optional[str] = None
+    bookings: Optional[List[Dict[str, Any]]] = None  # JSONB array
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    status: Optional[str] = None  # active, inactive, pending
+    
+    model_config = ConfigDict(
+        from_attributes=True,
+        extra="allow"
+    )
+
+
 class Place(BaseModel):
     id: Optional[str] = None  # UUID primary key (not in schema but present in DB)
     name: Optional[str] = None  # TEXT
@@ -586,6 +609,38 @@ async def get_place_by_id(place_id: str):
         )
 
 
+# Get all customers from Supabase
+@app.get("/api/customers", response_model=List[Customer])
+async def get_all_customers():
+    """
+    Retrieve all customers from the Supabase users table.
+    
+    Returns:
+        List[Customer]: A list of all customers in the database
+    """
+    try:
+        # Query the users table from Supabase
+        response = supabase.table("users").select("*").execute()
+        
+        if not response.data:
+            return []
+        
+        # Convert to Customer models (handles any extra fields from database)
+        customers = []
+        for user_data in response.data:
+            # Create Customer model, which will accept any extra fields due to extra="allow"
+            customer = Customer(**user_data)
+            customers.append(customer)
+        
+        return customers
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching customers: {str(e)}"
+        )
+
+
 # Get all places from Supabase
 @app.get("/api/places", response_model=List[Place])
 async def get_all_places():
@@ -615,6 +670,56 @@ async def get_all_places():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching places: {str(e)}"
+        )
+
+
+# Create a new place
+@app.post("/api/places", response_model=Place)
+async def create_place(place_data: Place):
+    """
+    Create a new place in the database.
+    
+    Args:
+        place_data: The Place model with place fields
+        
+    Returns:
+        Place: The created place object
+    """
+    try:
+        # Convert Pydantic model to dict, excluding None values and id
+        create_dict = place_data.model_dump(exclude={"id", "created_at", "updated_at"}, exclude_none=True)
+        
+        # Set timestamps if not provided
+        from datetime import datetime
+        now = datetime.utcnow().isoformat()
+        if "created_at" not in create_dict:
+            create_dict["created_at"] = now
+        if "updated_at" not in create_dict:
+            create_dict["updated_at"] = now
+        
+        # Insert the place
+        insert_response = supabase.table("places").insert(create_dict).execute()
+        
+        if not insert_response.data or len(insert_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create place"
+            )
+        
+        # Return the created place
+        created_place_data = insert_response.data[0]
+        created_place = Place(**created_place_data)
+        return created_place
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"Error traceback: {error_traceback}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating place: {str(e)}"
         )
 
 

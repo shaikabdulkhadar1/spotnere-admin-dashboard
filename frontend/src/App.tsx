@@ -18,6 +18,7 @@ import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import Listing from "./pages/Listing";
+import Customers from "./pages/Customers";
 
 const queryClient = new QueryClient();
 
@@ -49,6 +50,7 @@ const App = () => (
                 <Route element={<AdminLayout />}>
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/listings" element={<Listing />} />
+                  <Route path="/customers" element={<Customers />} />
                 </Route>
               </Route>
               <Route path="*" element={<NotFound />} />

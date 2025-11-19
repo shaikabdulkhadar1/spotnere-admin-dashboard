@@ -52,6 +52,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { EditPlaceModal } from "@/components/EditPlaceModal";
+import { AddPlaceModal } from "@/components/AddPlaceModal";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -100,6 +101,7 @@ export default function Listing() {
   const [placeToDelete, setPlaceToDelete] = useState<Place | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingPlaceId, setEditingPlaceId] = useState<string | null>(null);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   // Ensure admin data is fetched when component mounts
   useEffect(() => {
@@ -334,17 +336,12 @@ export default function Listing() {
         <div>
           <div className="flex items-center gap-3 mb-2">
             <h1 className="text-3xl font-bold text-foreground">Listings</h1>
-            {adminRole && (
-              <Badge variant="outline" className="text-xs">
-                Role: {adminRole}
-              </Badge>
-            )}
           </div>
           <p className="text-muted-foreground text-sm">
             Manage and view all your venue listings
           </p>
         </div>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => setIsAddModalOpen(true)}>
           <MapPin className="h-4 w-4" />
           Add New Listing
         </Button>
@@ -644,6 +641,9 @@ export default function Listing() {
           </div>
         )}
       </div>
+
+      {/* Add Place Modal */}
+      <AddPlaceModal open={isAddModalOpen} onOpenChange={setIsAddModalOpen} />
 
       {/* Edit Place Modal */}
       <EditPlaceModal
