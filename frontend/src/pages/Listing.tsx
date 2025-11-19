@@ -30,6 +30,7 @@ import {
   Filter,
   X,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import {
   Select,
@@ -60,23 +61,21 @@ interface Place {
   id: string;
   name: string;
   category: string;
-  description: string;
-  rating: number;
-  address: string;
-  city: string;
-  state: string;
-  country: string;
-  postal_code?: string;
-  avg_price: number;
-  review_count: number;
-  open_now: boolean;
+  sub_category?: string;
+  description?: string;
+  rating?: number;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  avg_price?: number;
+  review_count?: number;
   visible?: boolean;
   banner_image_link?: string;
   latitude?: number;
   longitude?: number;
   hours?: any[];
   amenities?: string[];
-  tags?: string[];
   website?: string;
   phone_number?: string;
   created_at?: string;
@@ -241,34 +240,35 @@ export default function Listing() {
     }
   };
 
-  // Fetch places from API
-  useEffect(() => {
-    const fetchPlaces = async () => {
-      try {
-        setIsLoading(true);
-        const accessToken = localStorage.getItem("access_token");
-        const response = await fetch(`${API_URL}/api/places`, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-        });
+  // Fetch places from API - extracted as reusable function
+  const fetchPlaces = async () => {
+    try {
+      setIsLoading(true);
+      const accessToken = localStorage.getItem("access_token");
+      const response = await fetch(`${API_URL}/api/places`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      });
 
-        if (response.ok) {
-          const data = await response.json();
-          setPlaces(data || []);
-        } else {
-          console.error("Failed to fetch places");
-          setPlaces([]);
-        }
-      } catch (error) {
-        console.error("Error fetching places:", error);
+      if (response.ok) {
+        const data = await response.json();
+        setPlaces(data || []);
+      } else {
+        console.error("Failed to fetch places");
         setPlaces([]);
-      } finally {
-        setIsLoading(false);
       }
-    };
+    } catch (error) {
+      console.error("Error fetching places:", error);
+      setPlaces([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  // Fetch places on component mount
+  useEffect(() => {
     fetchPlaces();
   }, []);
 
@@ -295,6 +295,8 @@ export default function Listing() {
       const matchesSearch =
         searchQuery === "" ||
         place.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        place.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        place.sub_category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         place.address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         place.city?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         place.country?.toLowerCase().includes(searchQuery.toLowerCase());
@@ -341,10 +343,23 @@ export default function Listing() {
             Manage and view all your venue listings
           </p>
         </div>
-        <Button className="gap-2" onClick={() => setIsAddModalOpen(true)}>
-          <MapPin className="h-4 w-4" />
-          Add New Listing
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className="gap-2 border-[#D3D5D9]"
+            onClick={fetchPlaces}
+            disabled={isLoading}
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+          <Button className="gap-2" onClick={() => setIsAddModalOpen(true)}>
+            <MapPin className="h-4 w-4" />
+            Add New Listing
+          </Button>
+        </div>
       </div>
 
       {/* Filters and Search */}
@@ -484,9 +499,16 @@ export default function Listing() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">
-                        {place.category || "Uncategorized"}
-                      </Badge>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant="secondary">
+                          {place.category || "Uncategorized"}
+                        </Badge>
+                        {place.sub_category && (
+                          <span className="text-xs text-muted-foreground">
+                            {place.sub_category}
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col text-sm">
@@ -643,7 +665,17 @@ export default function Listing() {
       </div>
 
       {/* Add Place Modal */}
-      <AddPlaceModal open={isAddModalOpen} onOpenChange={setIsAddModalOpen} />
+      <AddPlaceModal
+        open={isAddModalOpen}
+        onOpenChange={setIsAddModalOpen}
+        onPlaceCreated={() => {
+          // Refresh listings when a place is successfully created
+          // Small delay to ensure the place is saved before refreshing
+          setTimeout(() => {
+            fetchPlaces();
+          }, 500);
+        }}
+      />
 
       {/* Edit Place Modal */}
       <EditPlaceModal

@@ -23,6 +23,7 @@ import {
 import { Loader2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { BannerImageUpload } from "@/components/BannerImageUpload";
+import { getCategoryNames, getSubCategories } from "@/lib/categories";
 
 const API_URL = import.meta.env.VITE_API_URL;
 const COUNTRIES_API =
@@ -64,23 +65,21 @@ interface Place {
   id: string;
   name: string;
   category: string;
-  description: string;
-  rating: number;
-  address: string;
-  city: string;
-  state: string;
-  country: string;
-  postal_code?: string;
-  avg_price: number;
-  review_count: number;
-  open_now: boolean;
+  sub_category?: string;
+  description?: string;
+  rating?: number;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  avg_price?: number;
+  review_count?: number;
   visible?: boolean;
   banner_image_link?: string;
   latitude?: number;
   longitude?: number;
   hours?: any[];
   amenities?: string[];
-  tags?: string[];
   website?: string;
   phone_number?: string;
   created_at?: string;
@@ -104,7 +103,6 @@ export function EditPlaceModal({
   const [isLoadingPlaceDetails, setIsLoadingPlaceDetails] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [newAmenity, setNewAmenity] = useState("");
-  const [newTag, setNewTag] = useState("");
 
   // Location dropdown states
   const [countries, setCountries] = useState<string[]>([]);
@@ -219,7 +217,6 @@ export function EditPlaceModal({
       setPlaceDetails(null);
       setFormData({});
       setNewAmenity("");
-      setNewTag("");
       setStates([]);
       setCities([]);
       setPriceInputValue("");
@@ -400,10 +397,7 @@ export function EditPlaceModal({
     }
   };
 
-  const handleArrayFieldChange = (
-    field: "amenities" | "tags",
-    value: string[]
-  ) => {
+  const handleArrayFieldChange = (field: "amenities", value: string[]) => {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
@@ -424,19 +418,6 @@ export function EditPlaceModal({
     const updated = [...(formData.amenities || [])];
     updated.splice(index, 1);
     handleArrayFieldChange("amenities", updated);
-  };
-
-  const addTag = () => {
-    if (newTag.trim() && !formData.tags?.includes(newTag.trim())) {
-      handleArrayFieldChange("tags", [...(formData.tags || []), newTag.trim()]);
-      setNewTag("");
-    }
-  };
-
-  const removeTag = (index: number) => {
-    const updated = [...(formData.tags || [])];
-    updated.splice(index, 1);
-    handleArrayFieldChange("tags", updated);
   };
 
   const handleHoursChange = (
@@ -563,7 +544,6 @@ export function EditPlaceModal({
     setPlaceDetails(null);
     setFormData({});
     setNewAmenity("");
-    setNewTag("");
     setHoursData([]);
   };
 
@@ -607,14 +587,55 @@ export function EditPlaceModal({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="category">Category</Label>
-                <Input
-                  id="category"
+                <Select
                   value={formData.category || ""}
-                  onChange={(e) =>
-                    handleInputChange("category", e.target.value)
-                  }
-                />
+                  onValueChange={(value) => {
+                    handleInputChange("category", value);
+                    // Reset sub_category when category changes
+                    handleInputChange("sub_category", "");
+                  }}
+                >
+                  <SelectTrigger id="category">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getCategoryNames().map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="sub_category">Sub Category</Label>
+              <Select
+                value={formData.sub_category || ""}
+                onValueChange={(value) =>
+                  handleInputChange("sub_category", value)
+                }
+                disabled={!formData.category}
+              >
+                <SelectTrigger id="sub_category">
+                  <SelectValue
+                    placeholder={
+                      formData.category
+                        ? "Select sub category"
+                        : "Select category first"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {formData.category &&
+                    getSubCategories(formData.category).map((subCategory) => (
+                      <SelectItem key={subCategory} value={subCategory}>
+                        {subCategory}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -726,17 +747,6 @@ export function EditPlaceModal({
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="postal_code">Postal Code</Label>
-              <Input
-                id="postal_code"
-                value={formData.postal_code || ""}
-                onChange={(e) =>
-                  handleInputChange("postal_code", e.target.value)
-                }
-              />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -860,50 +870,6 @@ export function EditPlaceModal({
                   className="border-[#D3D5D9]"
                   type="button"
                   onClick={addAmenity}
-                  variant="outline"
-                >
-                  Add
-                </Button>
-              </div>
-            </div>
-
-            {/* Tags */}
-            <div className="space-y-2">
-              <Label>Tags</Label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {formData.tags?.map((tag, index) => (
-                  <Badge
-                    key={index}
-                    variant="outline"
-                    className="flex items-center gap-1"
-                  >
-                    {tag}
-                    <button
-                      type="button"
-                      onClick={() => removeTag(index)}
-                      className="ml-1 hover:text-destructive"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Add tag"
-                  value={newTag}
-                  onChange={(e) => setNewTag(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addTag();
-                    }
-                  }}
-                />
-                <Button
-                  className="border-[#D3D5D9]"
-                  type="button"
-                  onClick={addTag}
                   variant="outline"
                 >
                   Add

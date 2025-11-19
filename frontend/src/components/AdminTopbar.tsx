@@ -23,7 +23,7 @@ export function AdminTopbar() {
     return (first + last).toUpperCase() || "A";
   };
   return (
-    <header className="sticky top-0 z-30 bg-[#F4F5F5]">
+    <header className="fixed top-0 right-0 left-64 z-30 bg-[#F4F5F5]">
       <div className="flex items-center justify-end px-6 py-4">
         {/* Right side: Notifications and User Profile */}
         <div className="flex items-center gap-4 ml-4">

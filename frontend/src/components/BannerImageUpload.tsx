@@ -239,9 +239,8 @@ function BannerImageUploadComponent({
         throw new Error("Bucket name not configured");
       }
 
-      // Create a file path: place-banners/{placeId}/{timestamp}-{filename}
-      const fileExtension = bannerImageFile.name.split(".").pop() || "jpg";
-      const filePath = `place-banners/${placeId}/banner-${placeId}.${fileExtension}`;
+      // Create a file path: place-banners/{placeId}/banner-{placeId}.jpg
+      const filePath = `place-banners/${placeId}/banner-${placeId}.jpg`;
       console.log("[BannerImageUpload] File path created", {
         filePath,
       });

@@ -32,6 +32,7 @@ import {
   Edit,
   Trash2,
   Eye,
+  RefreshCw,
 } from "lucide-react";
 import {
   Select,
@@ -77,44 +78,45 @@ export default function Customers() {
   const [countryFilter, setCountryFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Fetch customers from API
-  useEffect(() => {
-    const fetchCustomers = async () => {
-      try {
-        setIsLoading(true);
-        const accessToken = localStorage.getItem("access_token");
-        const response = await fetch(`${API_URL}/api/customers`, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-        });
+  // Fetch customers from API - extracted as reusable function
+  const fetchCustomers = async () => {
+    try {
+      setIsLoading(true);
+      const accessToken = localStorage.getItem("access_token");
+      const response = await fetch(`${API_URL}/api/customers`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      });
 
-        if (response.ok) {
-          const data = await response.json();
-          setCustomers(data || []);
-        } else {
-          console.error("Failed to fetch customers");
-          setCustomers([]);
-          toast({
-            variant: "destructive",
-            title: "Error",
-            description: "Failed to fetch customers",
-          });
-        }
-      } catch (error) {
-        console.error("Error fetching customers:", error);
+      if (response.ok) {
+        const data = await response.json();
+        setCustomers(data || []);
+      } else {
+        console.error("Failed to fetch customers");
         setCustomers([]);
         toast({
           variant: "destructive",
           title: "Error",
-          description: "An error occurred while fetching customers",
+          description: "Failed to fetch customers",
         });
-      } finally {
-        setIsLoading(false);
       }
-    };
+    } catch (error) {
+      console.error("Error fetching customers:", error);
+      setCustomers([]);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "An error occurred while fetching customers",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  // Fetch customers on component mount
+  useEffect(() => {
     fetchCustomers();
   }, [toast]);
 
@@ -196,7 +198,7 @@ export default function Customers() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in w-full">
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
@@ -207,10 +209,23 @@ export default function Customers() {
             Manage and view all your customers
           </p>
         </div>
-        <Button className="gap-2">
-          <Users className="h-4 w-4" />
-          Add New Customer
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className="gap-2 border-[#D3D5D9]"
+            onClick={fetchCustomers}
+            disabled={isLoading}
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+          <Button className="gap-2">
+            <Users className="h-4 w-4" />
+            Add New Customer
+          </Button>
+        </div>
       </div>
 
       {/* Filters and Search */}
@@ -279,8 +294,8 @@ export default function Customers() {
       </div>
 
       {/* Table */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-card rounded-xl border border-border overflow-hidden w-full">
+        <div className="overflow-x-auto w-full">
           <Table>
             <TableHeader>
               <TableRow>

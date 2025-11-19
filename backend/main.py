@@ -103,12 +103,13 @@ class Customer(BaseModel):
 
 class Place(BaseModel):
     id: Optional[str] = None  # UUID primary key (not in schema but present in DB)
-    name: Optional[str] = None  # TEXT
-    category: Optional[str] = None  # TEXT
+    name: Optional[str] = None  # TEXT NOT NULL
+    category: Optional[str] = None  # TEXT NOT NULL
+    sub_category: Optional[str] = None  # TEXT
     description: Optional[str] = None  # TEXT
     banner_image_link: Optional[str] = None  # TEXT
-    rating: Optional[float] = None  # NUMERIC
-    avg_price: Optional[float] = None  # NUMERIC
+    rating: Optional[float] = None  # NUMERIC(2,1) - max 9.9
+    avg_price: Optional[float] = None  # NUMERIC(10,2) - can be large values
     latitude: Optional[float] = None  # DOUBLE PRECISION
     longitude: Optional[float] = None  # DOUBLE PRECISION
     address: Optional[str] = None  # TEXT
@@ -116,9 +117,8 @@ class Place(BaseModel):
     state: Optional[str] = None  # TEXT
     country: Optional[str] = None  # TEXT
     hours: Optional[List[Dict[str, Any]]] = None  # JSONB (array of objects)
-    open_now: Optional[bool] = None  # BOOLEAN
+    visible: Optional[bool] = None  # BOOLEAN DEFAULT true
     amenities: Optional[List[str]] = None  # TEXT[]
-    tags: Optional[List[str]] = None  # TEXT[]
     website: Optional[str] = None  # TEXT
     phone_number: Optional[str] = None  # TEXT
     review_count: Optional[int] = None  # INTEGER
@@ -689,6 +689,24 @@ async def create_place(place_data: Place):
         # Convert Pydantic model to dict, excluding None values and id
         create_dict = place_data.model_dump(exclude={"id", "created_at", "updated_at"}, exclude_none=True)
         
+        # Validate numeric fields
+        # Check rating field - NUMERIC(2,1) means max 9.9
+        if "rating" in create_dict and create_dict["rating"] is not None:
+            rating_value = float(create_dict["rating"])
+            if abs(rating_value) > 9.9:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Rating value {rating_value} exceeds maximum allowed value of 9.9. Please enter a value between 0 and 9.9."
+                )
+            # Round to 1 decimal place (NUMERIC(2,1))
+            create_dict["rating"] = round(rating_value, 1)
+        
+        # Check avg_price field - NUMERIC(10,2) can handle large values
+        if "avg_price" in create_dict and create_dict["avg_price"] is not None:
+            price_value = float(create_dict["avg_price"])
+            # Round to 2 decimal places (NUMERIC(10,2))
+            create_dict["avg_price"] = round(price_value, 2)
+        
         # Set timestamps if not provided
         from datetime import datetime
         now = datetime.utcnow().isoformat()
@@ -748,6 +766,24 @@ async def update_place(place_id: str, place_data: Place):
         
         # Convert Pydantic model to dict, excluding None values and id
         update_dict = place_data.model_dump(exclude={"id", "created_at", "updated_at"}, exclude_none=True)
+        
+        # Validate numeric fields
+        # Check rating field - NUMERIC(2,1) means max 9.9
+        if "rating" in update_dict and update_dict["rating"] is not None:
+            rating_value = float(update_dict["rating"])
+            if abs(rating_value) > 9.9:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Rating value {rating_value} exceeds maximum allowed value of 9.9. Please enter a value between 0 and 9.9."
+                )
+            # Round to 1 decimal place (NUMERIC(2,1))
+            update_dict["rating"] = round(rating_value, 1)
+        
+        # Check avg_price field - NUMERIC(10,2) can handle large values
+        if "avg_price" in update_dict and update_dict["avg_price"] is not None:
+            price_value = float(update_dict["avg_price"])
+            # Round to 2 decimal places (NUMERIC(10,2))
+            update_dict["avg_price"] = round(price_value, 2)
         
         # Update the place
         update_response = supabase.table("places").update(update_dict).eq("id", place_id).execute()
@@ -851,7 +887,7 @@ async def toggle_place_visibility(place_id: str):
 @app.delete("/api/places/{place_id}")
 async def delete_place(place_id: str):
     """
-    Delete a place from the database.
+    Delete a place from the database and its associated banner image from storage.
     
     Args:
         place_id: The UUID of the place to delete
@@ -860,8 +896,8 @@ async def delete_place(place_id: str):
         dict: A success message
     """
     try:
-        # First, check if place exists
-        check_response = supabase.table("places").select("id").eq("id", place_id).execute()
+        # First, check if place exists and get its data
+        check_response = supabase.table("places").select("*").eq("id", place_id).execute()
         
         if not check_response.data or len(check_response.data) == 0:
             raise HTTPException(
@@ -869,7 +905,28 @@ async def delete_place(place_id: str):
                 detail=f"Place with id {place_id} not found"
             )
         
-        # Delete the place
+        place_data = check_response.data[0]
+        
+        # Delete the banner image from storage if it exists
+        # Image path format: place-banners/{placeId}/banner-{placeId}.jpg
+        bucket_name = os.getenv("SUPABASE_BUCKET_NAME", "places_images")
+        
+        try:
+            # The image path is: place-banners/{placeId}/banner-{placeId}.jpg
+            image_path = f"place-banners/{place_id}/banner-{place_id}.jpg"
+            
+            # Delete the specific image file
+            # Supabase storage remove() takes a list of file paths
+            storage_response = supabase.storage.from_(bucket_name).remove([image_path])
+            print(f"Successfully deleted banner image: {image_path}")
+            
+        except Exception as storage_error:
+            # Log the error but don't fail the deletion if image deletion fails
+            # The image might not exist, which is fine
+            print(f"Warning: Failed to delete banner image for place {place_id}: {str(storage_error)}")
+            # Continue with place deletion even if image deletion fails
+        
+        # Delete the place from database
         delete_response = supabase.table("places").delete().eq("id", place_id).execute()
         
         # Check if deletion was successful
@@ -882,7 +939,7 @@ async def delete_place(place_id: str):
         
         return {
             "success": True,
-            "message": f"Place {place_id} deleted successfully"
+            "message": f"Place {place_id} and its banner image deleted successfully"
         }
         
     except HTTPException:
