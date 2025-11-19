@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { BannerImageUpload } from "@/components/BannerImageUpload";
 
 const API_URL = import.meta.env.VITE_API_URL;
 const COUNTRIES_API =
@@ -113,10 +114,6 @@ export function EditPlaceModal({
   const [isLoadingStates, setIsLoadingStates] = useState(false);
   const [isLoadingCities, setIsLoadingCities] = useState(false);
   const [priceInputValue, setPriceInputValue] = useState<string>("");
-  const [bannerImagePreview, setBannerImagePreview] = useState<string | null>(
-    null
-  );
-  const [bannerImageFile, setBannerImageFile] = useState<File | null>(null);
 
   // Hours state - structured format
   interface DayHours {
@@ -152,13 +149,6 @@ export function EditPlaceModal({
             } else {
               setPriceInputValue("");
             }
-            // Initialize banner image preview
-            if (data.banner_image_link) {
-              setBannerImagePreview(data.banner_image_link);
-            } else {
-              setBannerImagePreview(null);
-            }
-            setBannerImageFile(null);
             // Initialize hours data
             if (
               data.hours &&
@@ -233,11 +223,9 @@ export function EditPlaceModal({
       setStates([]);
       setCities([]);
       setPriceInputValue("");
-      setBannerImagePreview(null);
-      setBannerImageFile(null);
       setHoursData([]);
     }
-  }, [open, placeId, onOpenChange, toast]);
+  }, [open]);
 
   // Fetch countries when modal opens
   useEffect(() => {
@@ -361,15 +349,15 @@ export function EditPlaceModal({
     }
   };
 
-  const handleInputChange = (
-    field: keyof Place,
-    value: string | number | boolean | undefined
-  ) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
+  const handleInputChange = useCallback(
+    (field: keyof Place, value: string | number | boolean | undefined) => {
+      setFormData((prev) => ({
+        ...prev,
+        [field]: value,
+      }));
+    },
+    []
+  );
 
   // Handle price input change
   const handlePriceChange = (value: string) => {
@@ -559,47 +547,16 @@ export function EditPlaceModal({
     }
   };
 
-  const handleBannerImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // Validate file type
-      if (!file.type.startsWith("image/")) {
-        toast({
-          variant: "destructive",
-          title: "Invalid File",
-          description: "Please select an image file",
-        });
-        return;
-      }
+  const handleBannerImageUploaded = useCallback(
+    (imageUrl: string) => {
+      handleInputChange("banner_image_link", imageUrl);
+    },
+    [handleInputChange]
+  );
 
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        toast({
-          variant: "destructive",
-          title: "File Too Large",
-          description: "Image must be less than 5MB",
-        });
-        return;
-      }
-
-      setBannerImageFile(file);
-
-      // Create preview
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setBannerImagePreview(reader.result as string);
-        // Store base64 in form data
-        handleInputChange("banner_image_link", reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleRemoveBannerImage = () => {
-    setBannerImageFile(null);
-    setBannerImagePreview(null);
+  const handleBannerImageRemoved = useCallback(() => {
     handleInputChange("banner_image_link", "");
-  };
+  }, [handleInputChange]);
 
   const handleClose = () => {
     onOpenChange(false);
@@ -607,8 +564,6 @@ export function EditPlaceModal({
     setFormData({});
     setNewAmenity("");
     setNewTag("");
-    setBannerImagePreview(null);
-    setBannerImageFile(null);
     setHoursData([]);
   };
 
@@ -631,57 +586,35 @@ export function EditPlaceModal({
           </div>
         ) : formData ? (
           <div className="grid gap-4 py-4">
-            {/* Banner Image Upload - Moved to top */}
-            <div className="space-y-2">
-              <Label htmlFor="banner_image">Banner Image</Label>
-              <div className="space-y-4">
-                {bannerImagePreview ? (
-                  <div className="relative w-full h-48 rounded-lg border border-border overflow-hidden bg-muted">
-                    <img
-                      src={bannerImagePreview}
-                      alt="Banner preview"
-                      className="w-full h-full object-cover"
-                    />
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      className="absolute top-2 right-2"
-                      onClick={handleRemoveBannerImage}
-                    >
-                      <X className="h-4 w-4 mr-1" />
-                      Remove
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center w-full h-48 border-2 border-dashed border-border rounded-lg bg-muted/50">
-                    <div className="text-center">
-                      <p className="text-sm text-muted-foreground mb-2">
-                        No image selected
-                      </p>
-                    </div>
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  <Input
-                    id="banner_image"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleBannerImageChange}
-                    className="hidden"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      document.getElementById("banner_image")?.click()
+            {/* Banner Image Upload */}
+            {placeId && (
+              <BannerImageUpload
+                placeId={placeId}
+                initialImageUrl={formData.banner_image_link}
+                onImageUploaded={handleBannerImageUploaded}
+                onImageRemoved={handleBannerImageRemoved}
+              />
+            )}
+
+            {/* Debug: simple file input to verify onChange */}
+            <div className="space-y-2 border border-dashed border-gray-300 p-3 rounded-md bg-white/60">
+              <Label>Debug File Input (raw)</Label>
+              <input
+                type="file"
+                onChange={(e) => {
+                  console.log(
+                    "[EditPlaceModal DebugFileInput] onChange fired",
+                    {
+                      files: e.target.files,
+                      fileCount: e.target.files?.length,
                     }
-                    className="w-full border-[#D3D5D9]"
-                  >
-                    {bannerImagePreview ? "Change Image" : "Upload Image"}
-                  </Button>
-                </div>
-              </div>
+                  );
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                This is a temporary debug input to confirm that file input
+                change events work correctly inside the modal.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
