@@ -27,11 +27,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://spotnere-admin-dashboard.vercel.app",
         "http://localhost:8080",
         "http://localhost:5173",
         "http://127.0.0.1:8080",
         "http://127.0.0.1:5173",
+        "https://spotnere-admin-dashboard.vercel.app"
     ],  # Add your frontend URLs
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -952,6 +952,139 @@ async def delete_place(place_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error deleting place: {str(e)}"
+        )
+
+
+# Gallery Images endpoints
+class GalleryImageCreate(BaseModel):
+    gallery_image_url: str
+
+
+@app.post("/api/places/{place_id}/gallery-images")
+async def create_gallery_image(place_id: str, gallery_image: GalleryImageCreate):
+    """
+    Create a gallery image record for a place.
+    
+    Args:
+        place_id: The UUID of the place
+        gallery_image: The gallery image data with URL
+        
+    Returns:
+        dict: Success message and created gallery image data
+    """
+    try:
+        # Verify place exists
+        place_response = supabase.table("places").select("id").eq("id", place_id).execute()
+        
+        if not place_response.data or len(place_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Place with id {place_id} not found"
+            )
+        
+        # Insert gallery image record
+        from datetime import datetime
+        now = datetime.utcnow().isoformat()
+        
+        insert_data = {
+            "place_id": place_id,
+            "gallery_image_url": gallery_image.gallery_image_url,
+            "created_at": now
+        }
+        
+        insert_response = supabase.table("gallery_images").insert(insert_data).execute()
+        
+        if not insert_response.data or len(insert_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create gallery image record"
+            )
+        
+        return {
+            "success": True,
+            "data": insert_response.data[0]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"Error traceback: {error_traceback}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating gallery image: {str(e)}"
+        )
+
+
+@app.get("/api/places/{place_id}/gallery-images")
+async def get_gallery_images(place_id: str):
+    """
+    Get all gallery images for a place.
+    
+    Args:
+        place_id: The UUID of the place
+        
+    Returns:
+        list: List of gallery image records
+    """
+    try:
+        response = supabase.table("gallery_images").select("*").eq("place_id", place_id).order("created_at", desc=False).execute()
+        
+        return response.data if response.data else []
+        
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"Error traceback: {error_traceback}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching gallery images: {str(e)}"
+        )
+
+
+@app.delete("/api/places/{place_id}/gallery-images/{gallery_image_id}")
+async def delete_gallery_image(place_id: str, gallery_image_id: str):
+    """
+    Delete a gallery image record.
+    
+    Args:
+        place_id: The UUID of the place
+        gallery_image_id: The UUID of the gallery image record
+        
+    Returns:
+        dict: Success message
+    """
+    try:
+        # Verify the gallery image belongs to the place
+        check_response = supabase.table("gallery_images").select("*").eq("id", gallery_image_id).eq("place_id", place_id).execute()
+        
+        if not check_response.data or len(check_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Gallery image not found"
+            )
+        
+        # Get the image URL before deletion (for potential storage cleanup)
+        image_url = check_response.data[0].get("gallery_image_url")
+        
+        # Delete the record
+        delete_response = supabase.table("gallery_images").delete().eq("id", gallery_image_id).execute()
+        
+        return {
+            "success": True,
+            "message": "Gallery image deleted successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        print(f"Error traceback: {error_traceback}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting gallery image: {str(e)}"
         )
 
 

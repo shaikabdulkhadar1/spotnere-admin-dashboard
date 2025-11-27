@@ -20,46 +20,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, X } from "lucide-react";
+import { Loader2, X, Upload, Trash2, Image } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { BannerImageUpload } from "@/components/BannerImageUpload";
 import { getCategoryNames, getSubCategories } from "@/lib/categories";
+import { getAuthenticatedSupabase } from "@/lib/supabase";
+
+import { Country, State, City } from "country-state-city";
 
 const API_URL = import.meta.env.VITE_API_URL;
-const COUNTRIES_API =
-  import.meta.env.VITE_COUNTRIES_API || "https://countriesnow.space/api/v0.1";
-
-interface CountryPosition {
-  name: string;
-  lat: number;
-  lng: number;
-}
-
-interface CountriesResponse {
-  error: boolean;
-  msg: string;
-  data: CountryPosition[];
-}
-
-interface StatesResponse {
-  error: boolean;
-  msg: string;
-  data: {
-    name: string;
-    iso2: string;
-    iso3: string;
-    states: Array<{
-      name: string;
-      state_code: string;
-    }>;
-  };
-}
-
-interface CitiesResponse {
-  error: boolean;
-  msg: string;
-  data: string[];
-}
 
 interface Place {
   id: string;
@@ -82,6 +51,7 @@ interface Place {
   amenities?: string[];
   website?: string;
   phone_number?: string;
+  gallery_images?: string[];
   created_at?: string;
   updated_at?: string;
 }
@@ -112,6 +82,10 @@ export function EditPlaceModal({
   const [isLoadingStates, setIsLoadingStates] = useState(false);
   const [isLoadingCities, setIsLoadingCities] = useState(false);
   const [priceInputValue, setPriceInputValue] = useState<string>("");
+  const [galleryImages, setGalleryImages] = useState<
+    Array<{ preview: string; file: File | null; url?: string; id?: string }>
+  >([]);
+  const [isUploadingGalleryImage, setIsUploadingGalleryImage] = useState(false);
 
   // Hours state - structured format
   interface DayHours {
@@ -187,6 +161,7 @@ export function EditPlaceModal({
               ];
               setHoursData(defaultDays);
             }
+            // Gallery images will be loaded via useEffect after component mounts
           } else {
             const errorData = await response.json().catch(() => ({
               detail: "Failed to fetch place details",
@@ -221,6 +196,7 @@ export function EditPlaceModal({
       setCities([]);
       setPriceInputValue("");
       setHoursData([]);
+      setGalleryImages([]);
     }
   }, [open]);
 
@@ -254,14 +230,8 @@ export function EditPlaceModal({
   const fetchCountries = async () => {
     setIsLoadingCountries(true);
     try {
-      const response = await fetch(`${COUNTRIES_API}/countries/positions`);
-      const data: CountriesResponse = await response.json();
-
-      if (data.error) {
-        throw new Error(data.msg || "Failed to fetch countries");
-      }
-
-      const countryNames = data.data.map((country) => country.name).sort();
+      const allCountries = Country.getAllCountries();
+      const countryNames = allCountries.map((country) => country.name).sort();
       setCountries(countryNames);
     } catch (error) {
       toast({
@@ -280,21 +250,17 @@ export function EditPlaceModal({
     setStates([]);
     setCities([]);
     try {
-      const response = await fetch(`${COUNTRIES_API}/countries/states`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ country }),
-      });
+      // Find the country ISO code from the country name
+      const countryData = Country.getAllCountries().find(
+        (c) => c.name === country
+      );
 
-      const data: StatesResponse = await response.json();
-
-      if (data.error) {
-        throw new Error(data.msg || "Failed to fetch states");
+      if (!countryData) {
+        throw new Error(`Country "${country}" not found`);
       }
 
-      const stateNames = data.data.states.map((state) => state.name).sort();
+      const allStates = State.getStatesOfCountry(countryData.isoCode);
+      const stateNames = allStates.map((state) => state.name).sort();
       setStates(stateNames);
     } catch (error) {
       toast({
@@ -313,25 +279,28 @@ export function EditPlaceModal({
     setIsLoadingCities(true);
     setCities([]);
     try {
-      const response = await fetch(`${COUNTRIES_API}/countries/state/cities`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ country, state }),
-      });
+      // Find the country ISO code from the country name
+      const countryData = Country.getAllCountries().find(
+        (c) => c.name === country
+      );
 
-      const data: CitiesResponse = await response.json();
-
-      if (data.error) {
-        throw new Error(data.msg || "Failed to fetch cities");
+      if (!countryData) {
+        throw new Error(`Country "${country}" not found`);
       }
 
-      if (!Array.isArray(data.data)) {
-        throw new Error("Invalid cities data format");
+      // Find the state ISO code from the state name
+      const allStates = State.getStatesOfCountry(countryData.isoCode);
+      const stateData = allStates.find((s) => s.name === state);
+
+      if (!stateData) {
+        throw new Error(`State "${state}" not found`);
       }
 
-      const cityNames = data.data.sort();
+      const allCities = City.getCitiesOfState(
+        countryData.isoCode,
+        stateData.isoCode
+      );
+      const cityNames = allCities.map((city) => city.name).sort();
       setCities(cityNames);
     } catch (error) {
       toast({
@@ -476,9 +445,6 @@ export function EditPlaceModal({
       }
 
       // Convert string numbers to proper types
-      if (updateData.rating !== undefined) {
-        updateData.rating = parseFloat(String(updateData.rating)) || 0;
-      }
       if (updateData.avg_price !== undefined) {
         updateData.avg_price = parseFloat(String(updateData.avg_price)) || 0;
       }
@@ -500,6 +466,10 @@ export function EditPlaceModal({
         const updatedPlace = await response.json();
         setPlaceDetails(updatedPlace);
         setFormData(updatedPlace);
+
+        // Reload gallery images from API
+        await loadGalleryImages(placeId);
+
         toast({
           title: "Success",
           description: "Place details updated successfully",
@@ -539,6 +509,260 @@ export function EditPlaceModal({
     handleInputChange("banner_image_link", "");
   }, [handleInputChange]);
 
+  // Load gallery images from API
+  const loadGalleryImages = async (placeId: string) => {
+    try {
+      const accessToken = localStorage.getItem("access_token");
+      const response = await fetch(
+        `${API_URL}/api/places/${placeId}/gallery-images`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.ok) {
+        const galleryData = await response.json();
+        if (Array.isArray(galleryData) && galleryData.length > 0) {
+          setGalleryImages(
+            galleryData.map(
+              (item: { gallery_image_url: string; id: string }) => ({
+                preview: item.gallery_image_url,
+                file: null,
+                url: item.gallery_image_url,
+                id: item.id, // Store the gallery image ID for deletion
+              })
+            )
+          );
+        } else {
+          setGalleryImages([]);
+        }
+      } else {
+        setGalleryImages([]);
+      }
+    } catch (error) {
+      console.error("Error loading gallery images:", error);
+      setGalleryImages([]);
+    }
+  };
+
+  // Load gallery images when place is loaded
+  useEffect(() => {
+    if (open && placeId && formData.id) {
+      loadGalleryImages(placeId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, placeId, formData.id]);
+
+  // Upload gallery images to Supabase Storage and save to database
+  const handleUploadGalleryImages = async () => {
+    if (!placeId) return;
+
+    // Get images that have File objects (newly selected images)
+    const imagesToUpload = galleryImages.filter((img) => img.file !== null);
+
+    if (imagesToUpload.length === 0) {
+      toast({
+        title: "No images selected",
+        description: "Please select images first before uploading.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsUploadingGalleryImage(true);
+      const supabase = await getAuthenticatedSupabase();
+      const bucketName =
+        import.meta.env.VITE_SUPABASE_BUCKET_NAME || "places_images";
+      const accessToken = localStorage.getItem("access_token");
+
+      // Get existing gallery images count for numbering
+      const existingImages = galleryImages.filter(
+        (img) => img.url && !img.file
+      );
+      let startIndex = existingImages.length;
+
+      toast({
+        title: "Uploading images",
+        description: `Uploading ${imagesToUpload.length} image(s)...`,
+      });
+
+      const uploadedUrls: string[] = [];
+
+      // Upload each image to Supabase Storage
+      for (let i = 0; i < imagesToUpload.length; i++) {
+        const image = imagesToUpload[i];
+        if (!image.file) continue;
+
+        // Generate file path: {placeId}/gallery-{placeId}-001.jpg (3-digit numbering)
+        const imageNumber = String(startIndex + i + 1).padStart(3, "0");
+        const filePath = `${placeId}/gallery-${placeId}-${imageNumber}.jpg`;
+
+        try {
+          // Upload to Supabase Storage
+          const { data: uploadData, error: uploadError } =
+            await supabase.storage
+              .from(bucketName)
+              .upload(filePath, image.file, {
+                cacheControl: "3600",
+                upsert: true,
+                contentType: image.file.type,
+              });
+
+          if (uploadError) {
+            console.error(
+              `Error uploading gallery image ${i + 1}:`,
+              uploadError
+            );
+            toast({
+              variant: "destructive",
+              title: "Upload Error",
+              description: `Failed to upload image ${i + 1}. Please try again.`,
+            });
+            continue;
+          }
+
+          // Get public URL
+          const {
+            data: { publicUrl },
+          } = supabase.storage.from(bucketName).getPublicUrl(filePath);
+
+          if (publicUrl) {
+            uploadedUrls.push(publicUrl);
+          }
+        } catch (error) {
+          console.error(`Error uploading gallery image ${i + 1}:`, error);
+          toast({
+            variant: "destructive",
+            title: "Upload Error",
+            description: `Failed to upload image ${i + 1}. Please try again.`,
+          });
+        }
+      }
+
+      // Save uploaded URLs to gallery_images table
+      if (uploadedUrls.length > 0) {
+        for (const url of uploadedUrls) {
+          try {
+            const response = await fetch(
+              `${API_URL}/api/places/${placeId}/gallery-images`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  gallery_image_url: url,
+                }),
+              }
+            );
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({
+                detail: "Failed to save gallery image",
+              }));
+              console.error("Error saving gallery image:", errorData);
+            }
+          } catch (error) {
+            console.error("Error saving gallery image to database:", error);
+          }
+        }
+
+        // Reload gallery images from API to get the updated list with IDs
+        await loadGalleryImages(placeId);
+
+        toast({
+          title: "Success",
+          description: `Successfully uploaded ${uploadedUrls.length} image(s).`,
+        });
+      }
+    } catch (error) {
+      console.error("Error uploading gallery images:", error);
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description:
+          "An error occurred while uploading images. Please try again.",
+      });
+    } finally {
+      setIsUploadingGalleryImage(false);
+    }
+  };
+
+  // Gallery handlers
+  const handleGalleryImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    // Create preview URLs and store File objects for selected images
+    const newImages: Array<{ preview: string; file: File; url?: string }> = [];
+    Array.from(files).forEach((file) => {
+      if (file.type.startsWith("image/")) {
+        const previewUrl = URL.createObjectURL(file);
+        newImages.push({
+          preview: previewUrl,
+          file: file,
+        });
+      }
+    });
+
+    // Add to gallery
+    setGalleryImages((prev) => [...prev, ...newImages]);
+
+    // Reset input
+    e.target.value = "";
+  };
+
+  const handleGalleryImageDelete = async (index: number) => {
+    const imageToRemove = galleryImages[index];
+
+    // If it's an uploaded image (has ID), delete from database
+    if (imageToRemove.id && placeId) {
+      try {
+        const accessToken = localStorage.getItem("access_token");
+        const response = await fetch(
+          `${API_URL}/api/places/${placeId}/gallery-images/${imageToRemove.id}`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (!response.ok) {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Failed to delete image from database.",
+          });
+          return;
+        }
+      } catch (error) {
+        console.error("Error deleting gallery image:", error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "An error occurred while deleting the image.",
+        });
+        return;
+      }
+    }
+
+    // Revoke object URL if it's a blob URL
+    if (imageToRemove.preview.startsWith("blob:")) {
+      URL.revokeObjectURL(imageToRemove.preview);
+    }
+
+    // Remove from state
+    setGalleryImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleClose = () => {
     onOpenChange(false);
     setPlaceDetails(null);
@@ -549,7 +773,7 @@ export function EditPlaceModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] bg-[#F4F5F5] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] bg-[#F4F5F5] overflow-y-auto overflow-x-hidden">
         <DialogHeader className="pt-4">
           <DialogTitle>Edit Place Details</DialogTitle>
           <DialogDescription>
@@ -772,18 +996,6 @@ export function EditPlaceModal({
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="rating">Rating</Label>
-                <Input
-                  id="rating"
-                  type="number"
-                  step="0.1"
-                  value={formData.rating || 0}
-                  onChange={(e) =>
-                    handleInputChange("rating", parseFloat(e.target.value) || 0)
-                  }
-                />
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="avg_price">Average Price</Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground">
@@ -800,37 +1012,37 @@ export function EditPlaceModal({
                   />
                 </div>
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="visible">Visible</Label>
-              <Select
-                value={
-                  formData.visible === false
-                    ? "hidden"
-                    : formData.visible === true
-                    ? "visible"
-                    : "not_set"
-                }
-                onValueChange={(value) => {
-                  if (value === "visible") {
-                    handleInputChange("visible", true);
-                  } else if (value === "hidden") {
-                    handleInputChange("visible", false);
-                  } else {
-                    handleInputChange("visible", undefined);
+              <div className="space-y-2">
+                <Label htmlFor="visible">Visible</Label>
+                <Select
+                  value={
+                    formData.visible === false
+                      ? "hidden"
+                      : formData.visible === true
+                      ? "visible"
+                      : "not_set"
                   }
-                }}
-              >
-                <SelectTrigger id="visible">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="visible">Visible</SelectItem>
-                  <SelectItem value="hidden">Hidden</SelectItem>
-                  <SelectItem value="not_set">Not Set</SelectItem>
-                </SelectContent>
-              </Select>
+                  onValueChange={(value) => {
+                    if (value === "visible") {
+                      handleInputChange("visible", true);
+                    } else if (value === "hidden") {
+                      handleInputChange("visible", false);
+                    } else {
+                      handleInputChange("visible", undefined);
+                    }
+                  }}
+                >
+                  <SelectTrigger id="visible">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="visible">Visible</SelectItem>
+                    <SelectItem value="hidden">Hidden</SelectItem>
+                    <SelectItem value="not_set">Not Set</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Amenities */}
@@ -973,6 +1185,166 @@ export function EditPlaceModal({
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* Gallery */}
+            <div className="space-y-6">
+              {/* Existing Gallery Images - Horizontally Scrollable */}
+              <div className="space-y-3">
+                <Label className="text-base font-semibold">
+                  Gallery Images
+                </Label>
+                {galleryImages.filter((img) => img.url && !img.file).length >
+                0 ? (
+                  <div className="w-full overflow-x-auto overflow-y-hidden pb-2">
+                    <div className="inline-flex gap-4">
+                      {galleryImages
+                        .filter((img) => img.url && !img.file)
+                        .map((image, index) => (
+                          <div
+                            key={image.id || index}
+                            className="relative group flex-shrink-0 w-40 h-40 rounded-lg overflow-hidden border-2 border-border bg-card shadow-sm hover:shadow-md transition-shadow"
+                          >
+                            <img
+                              src={image.url || image.preview}
+                              alt={`Gallery image ${index + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                className="h-9 w-9 rounded-full p-0 shadow-lg"
+                                onClick={() => {
+                                  const actualIndex = galleryImages.findIndex(
+                                    (img) => img.id === image.id
+                                  );
+                                  if (actualIndex !== -1) {
+                                    handleGalleryImageDelete(actualIndex);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border border-border border-dashed rounded-lg p-6 bg-card text-center">
+                    <Image className="h-10 w-10 mx-auto text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground">
+                      No gallery images yet. Upload images below to get started.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Upload New Gallery Images Section */}
+              <div className="space-y-3 border-t border-border pt-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold">
+                    Upload New Gallery Images
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="gallery-upload">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="border-[#D3D5D9] text-xs h-8 gap-2"
+                        disabled={isUploadingGalleryImage}
+                        asChild
+                      >
+                        <span className="cursor-pointer">
+                          <Upload className="h-3 w-3" />
+                          Choose Images
+                        </span>
+                      </Button>
+                      <input
+                        id="gallery-upload"
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleGalleryImageUpload}
+                        disabled={isUploadingGalleryImage}
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      className="text-xs h-8 gap-2"
+                      onClick={handleUploadGalleryImages}
+                      disabled={
+                        isUploadingGalleryImage ||
+                        galleryImages.filter((img) => img.file !== null)
+                          .length === 0
+                      }
+                    >
+                      {isUploadingGalleryImage ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-3 w-3" />
+                          Upload
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Preview of Selected Images (Before Upload) */}
+                {galleryImages.filter((img) => img.file !== null).length >
+                  0 && (
+                  <div className="space-y-2">
+                    <Label className="text-sm text-muted-foreground">
+                      Selected Images (
+                      {galleryImages.filter((img) => img.file !== null).length})
+                    </Label>
+                    <div className="grid grid-cols-3 gap-4">
+                      {galleryImages
+                        .filter((img) => img.file !== null)
+                        .map((image, index) => {
+                          const actualIndex = galleryImages.findIndex(
+                            (img) => img === image
+                          );
+                          return (
+                            <div
+                              key={index}
+                              className="relative group aspect-square rounded-lg overflow-hidden border-2 border-dashed border-primary/30 bg-card"
+                            >
+                              <img
+                                src={image.preview}
+                                alt={`Selected image ${index + 1}`}
+                                className="w-full h-full object-cover"
+                              />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  className="h-8 w-8 rounded-full p-0"
+                                  onClick={() =>
+                                    handleGalleryImageDelete(actualIndex)
+                                  }
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

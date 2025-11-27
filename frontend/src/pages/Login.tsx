@@ -21,41 +21,9 @@ import {
   Building2,
   Globe,
 } from "lucide-react";
+import { Country, State, City } from "country-state-city";
 
 const API_URL = import.meta.env.VITE_API_URL;
-const COUNTRIES_API = import.meta.env.VITE_COUNTRIES_API;
-
-interface CountryPosition {
-  name: string;
-  lat: number;
-  lng: number;
-}
-
-interface CountriesResponse {
-  error: boolean;
-  msg: string;
-  data: CountryPosition[];
-}
-
-interface StatesResponse {
-  error: boolean;
-  msg: string;
-  data: {
-    name: string;
-    iso2: string;
-    iso3: string;
-    states: Array<{
-      name: string;
-      state_code: string;
-    }>;
-  };
-}
-
-interface CitiesResponse {
-  error: boolean;
-  msg: string;
-  data: string[];
-}
 
 export default function Login() {
   const navigate = useNavigate();
@@ -169,14 +137,8 @@ export default function Login() {
   const fetchCountries = async () => {
     setIsLoadingCountries(true);
     try {
-      const response = await fetch(`${COUNTRIES_API}/countries/positions`);
-      const data: CountriesResponse = await response.json();
-
-      if (data.error) {
-        throw new Error(data.msg || "Failed to fetch countries");
-      }
-
-      const countryNames = data.data.map((country) => country.name).sort();
+      const allCountries = Country.getAllCountries();
+      const countryNames = allCountries.map((country) => country.name).sort();
       setCountries([...countryNames, "Other"]);
     } catch (error) {
       toast({
@@ -195,21 +157,17 @@ export default function Login() {
     setStates([]);
     setCities([]);
     try {
-      const response = await fetch(`${COUNTRIES_API}/countries/states`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ country }),
-      });
-
-      const data: StatesResponse = await response.json();
-
-      if (data.error) {
-        throw new Error(data.msg || "Failed to fetch states");
+      // Find the country ISO code from the country name
+      const countryData = Country.getAllCountries().find(
+        (c) => c.name === country
+      );
+      
+      if (!countryData) {
+        throw new Error(`Country "${country}" not found`);
       }
 
-      const stateNames = data.data.states.map((state) => state.name).sort();
+      const allStates = State.getStatesOfCountry(countryData.isoCode);
+      const stateNames = allStates.map((state) => state.name).sort();
       const statesList = [...stateNames, "Other"];
       setStates(statesList);
     } catch (error) {
@@ -228,25 +186,28 @@ export default function Login() {
     setIsLoadingCities(true);
     setCities([]);
     try {
-      const response = await fetch(`${COUNTRIES_API}/countries/state/cities`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ country: country, state: state }),
-      });
-
-      const data: CitiesResponse = await response.json();
-
-      if (data.error) {
-        throw new Error(data.msg || "Failed to fetch cities");
+      // Find the country ISO code from the country name
+      const countryData = Country.getAllCountries().find(
+        (c) => c.name === country
+      );
+      
+      if (!countryData) {
+        throw new Error(`Country "${country}" not found`);
       }
 
-      if (!Array.isArray(data.data)) {
-        throw new Error("Invalid cities data format");
+      // Find the state ISO code from the state name
+      const allStates = State.getStatesOfCountry(countryData.isoCode);
+      const stateData = allStates.find((s) => s.name === state);
+      
+      if (!stateData) {
+        throw new Error(`State "${state}" not found`);
       }
 
-      const cityNames = data.data;
+      const allCities = City.getCitiesOfState(
+        countryData.isoCode,
+        stateData.isoCode
+      );
+      const cityNames = allCities.map((city) => city.name).sort();
       const citiesList = [...cityNames, "Other"];
       setCities(citiesList);
     } catch (error) {

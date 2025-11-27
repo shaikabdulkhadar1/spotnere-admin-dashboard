@@ -24,42 +24,9 @@ import { Loader2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { BannerImageUpload } from "@/components/BannerImageUpload";
 import { getCategoryNames, getSubCategories } from "@/lib/categories";
+import { Country, State, City } from "country-state-city";
 
 const API_URL = import.meta.env.VITE_API_URL;
-const COUNTRIES_API =
-  import.meta.env.VITE_COUNTRIES_API || "https://countriesnow.space/api/v0.1";
-
-interface CountryPosition {
-  name: string;
-  lat: number;
-  lng: number;
-}
-
-interface CountriesResponse {
-  error: boolean;
-  msg: string;
-  data: CountryPosition[];
-}
-
-interface StatesResponse {
-  error: boolean;
-  msg: string;
-  data: {
-    name: string;
-    iso2: string;
-    iso3: string;
-    states: Array<{
-      name: string;
-      state_code: string;
-    }>;
-  };
-}
-
-interface CitiesResponse {
-  error: boolean;
-  msg: string;
-  data: string[];
-}
 
 interface Place {
   id: string;
@@ -67,7 +34,6 @@ interface Place {
   category: string;
   sub_category?: string;
   description?: string;
-  rating?: number;
   address?: string;
   city?: string;
   state?: string;
@@ -176,14 +142,8 @@ export function AddPlaceModal({
   const fetchCountries = async () => {
     setIsLoadingCountries(true);
     try {
-      const response = await fetch(`${COUNTRIES_API}/countries/positions`);
-      const data: CountriesResponse = await response.json();
-
-      if (data.error) {
-        throw new Error(data.msg || "Failed to fetch countries");
-      }
-
-      const countryNames = data.data.map((country) => country.name).sort();
+      const allCountries = Country.getAllCountries();
+      const countryNames = allCountries.map((country) => country.name).sort();
       setCountries(countryNames);
     } catch (error) {
       toast({
@@ -202,21 +162,17 @@ export function AddPlaceModal({
     setStates([]);
     setCities([]);
     try {
-      const response = await fetch(`${COUNTRIES_API}/countries/states`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ country }),
-      });
-
-      const data: StatesResponse = await response.json();
-
-      if (data.error) {
-        throw new Error(data.msg || "Failed to fetch states");
+      // Find the country ISO code from the country name
+      const countryData = Country.getAllCountries().find(
+        (c) => c.name === country
+      );
+      
+      if (!countryData) {
+        throw new Error(`Country "${country}" not found`);
       }
 
-      const stateNames = data.data.states.map((state) => state.name).sort();
+      const allStates = State.getStatesOfCountry(countryData.isoCode);
+      const stateNames = allStates.map((state) => state.name).sort();
       setStates(stateNames);
     } catch (error) {
       toast({
@@ -235,25 +191,28 @@ export function AddPlaceModal({
     setIsLoadingCities(true);
     setCities([]);
     try {
-      const response = await fetch(`${COUNTRIES_API}/countries/state/cities`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ country, state }),
-      });
-
-      const data: CitiesResponse = await response.json();
-
-      if (data.error) {
-        throw new Error(data.msg || "Failed to fetch cities");
+      // Find the country ISO code from the country name
+      const countryData = Country.getAllCountries().find(
+        (c) => c.name === country
+      );
+      
+      if (!countryData) {
+        throw new Error(`Country "${country}" not found`);
       }
 
-      if (!Array.isArray(data.data)) {
-        throw new Error("Invalid cities data format");
+      // Find the state ISO code from the state name
+      const allStates = State.getStatesOfCountry(countryData.isoCode);
+      const stateData = allStates.find((s) => s.name === state);
+      
+      if (!stateData) {
+        throw new Error(`State "${state}" not found`);
       }
 
-      const cityNames = data.data.sort();
+      const allCities = City.getCitiesOfState(
+        countryData.isoCode,
+        stateData.isoCode
+      );
+      const cityNames = allCities.map((city) => city.name).sort();
       setCities(cityNames);
     } catch (error) {
       toast({
@@ -377,6 +336,59 @@ export function AddPlaceModal({
   };
 
   const handleSave = async () => {
+    // Validate required fields before saving
+    const missingFields: string[] = [];
+
+    if (!formData.name || !formData.name.toString().trim()) {
+      missingFields.push("Name");
+    }
+    if (!formData.category || !formData.category.toString().trim()) {
+      missingFields.push("Category");
+    }
+    if (!formData.sub_category || !formData.sub_category.toString().trim()) {
+      missingFields.push("Sub Category");
+    }
+    if (!formData.description || !formData.description.toString().trim()) {
+      missingFields.push("Description");
+    }
+    if (!formData.address || !formData.address.toString().trim()) {
+      missingFields.push("Address");
+    }
+    if (!formData.country || !formData.country.toString().trim()) {
+      missingFields.push("Country");
+    }
+    if (!formData.state || !formData.state.toString().trim()) {
+      missingFields.push("State");
+    }
+    if (!formData.city || !formData.city.toString().trim()) {
+      missingFields.push("City");
+    }
+    if (!formData.phone_number || !formData.phone_number.toString().trim()) {
+      missingFields.push("Phone Number");
+    }
+    if (!formData.website || !formData.website.toString().trim()) {
+      missingFields.push("Website");
+    }
+
+    const avgPriceValue =
+      formData.avg_price !== undefined ? Number(formData.avg_price) : NaN;
+    if (!priceInputValue || isNaN(avgPriceValue) || avgPriceValue <= 0) {
+      missingFields.push("Average Price");
+    }
+
+    if (formData.visible === undefined) {
+      missingFields.push("Visible");
+    }
+
+    if (missingFields.length > 0) {
+      toast({
+        variant: "destructive",
+        title: "Missing required fields",
+        description: `Please fill in: ${missingFields.join(", ")}`,
+      });
+      return;
+    }
+
     try {
       setIsSaving(true);
 
@@ -389,9 +401,6 @@ export function AddPlaceModal({
       }
 
       // Convert string numbers to proper types
-      if (createData.rating !== undefined) {
-        createData.rating = parseFloat(String(createData.rating)) || 0;
-      }
       if (createData.avg_price !== undefined) {
         createData.avg_price = parseFloat(String(createData.avg_price)) || 0;
       }
@@ -807,21 +816,6 @@ export function AddPlaceModal({
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="rating">Rating</Label>
-                  <Input
-                    id="rating"
-                    type="number"
-                    step="0.1"
-                    value={formData.rating || 0}
-                    onChange={(e) =>
-                      handleInputChange(
-                        "rating",
-                        parseFloat(e.target.value) || 0
-                      )
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
                   <Label htmlFor="avg_price">Average Price</Label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground">
@@ -838,37 +832,37 @@ export function AddPlaceModal({
                     />
                   </div>
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="visible">Visible</Label>
-                <Select
-                  value={
-                    formData.visible === false
-                      ? "hidden"
-                      : formData.visible === true
-                      ? "visible"
-                      : "not_set"
-                  }
-                  onValueChange={(value) => {
-                    if (value === "visible") {
-                      handleInputChange("visible", true);
-                    } else if (value === "hidden") {
-                      handleInputChange("visible", false);
-                    } else {
-                      handleInputChange("visible", undefined);
+                <div className="space-y-2">
+                  <Label htmlFor="visible">Visible</Label>
+                  <Select
+                    value={
+                      formData.visible === false
+                        ? "hidden"
+                        : formData.visible === true
+                        ? "visible"
+                        : "not_set"
                     }
-                  }}
-                >
-                  <SelectTrigger id="visible">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="visible">Visible</SelectItem>
-                    <SelectItem value="hidden">Hidden</SelectItem>
-                    <SelectItem value="not_set">Not Set</SelectItem>
-                  </SelectContent>
-                </Select>
+                    onValueChange={(value) => {
+                      if (value === "visible") {
+                        handleInputChange("visible", true);
+                      } else if (value === "hidden") {
+                        handleInputChange("visible", false);
+                      } else {
+                        handleInputChange("visible", undefined);
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="visible">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="visible">Visible</SelectItem>
+                      <SelectItem value="hidden">Hidden</SelectItem>
+                      <SelectItem value="not_set">Not Set</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               {/* Amenities */}

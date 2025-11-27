@@ -240,7 +240,7 @@ function BannerImageUploadComponent({
       }
 
       // Create a file path: place-banners/{placeId}/banner-{placeId}.jpg
-      const filePath = `place-banners/${placeId}/banner-${placeId}.jpg`;
+      const filePath = `${placeId}/banner-${placeId}.jpg`;
       console.log("[BannerImageUpload] File path created", {
         filePath,
       });
