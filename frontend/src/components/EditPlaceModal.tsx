@@ -720,10 +720,60 @@ export function EditPlaceModal({
   const handleGalleryImageDelete = async (index: number) => {
     const imageToRemove = galleryImages[index];
 
-    // If it's an uploaded image (has ID), delete from database
-    if (imageToRemove.id && placeId) {
+    // If it's an uploaded image (has ID), delete from database and storage
+    if (imageToRemove.id && placeId && imageToRemove.url) {
       try {
         const accessToken = localStorage.getItem("access_token");
+        const bucketName =
+          import.meta.env.VITE_SUPABASE_BUCKET_NAME || "places_images";
+
+        // Extract file path from the Supabase Storage URL
+        // URL format: https://[project].supabase.co/storage/v1/object/public/[bucket]/[filePath]
+        let filePath: string | null = null;
+        try {
+          const url = new URL(imageToRemove.url);
+          // Extract path after /object/public/[bucket]/
+          // Example: /storage/v1/object/public/places_images/place-id/gallery-place-id-001.jpg
+          const pathParts = url.pathname.split("/").filter((p) => p); // Remove empty strings
+          const publicIndex = pathParts.indexOf("public");
+          if (publicIndex !== -1 && pathParts.length > publicIndex + 1) {
+            // Get everything after "public" and the bucket name
+            // pathParts[publicIndex + 1] is the bucket name, we want everything after that
+            filePath = pathParts.slice(publicIndex + 2).join("/");
+          }
+        } catch (urlError) {
+          console.error("Error parsing image URL:", urlError);
+          // If URL parsing fails, we can't delete from storage
+          console.warn(
+            "Could not extract file path from URL, skipping storage deletion"
+          );
+        }
+
+        // Delete from Supabase Storage if we have a file path
+        if (filePath) {
+          try {
+            const supabase = await getAuthenticatedSupabase();
+            const { error: storageError } = await supabase.storage
+              .from(bucketName)
+              .remove([filePath]);
+
+            if (storageError) {
+              console.error("Error deleting image from storage:", storageError);
+              // Continue with database deletion even if storage deletion fails
+              toast({
+                variant: "destructive",
+                title: "Warning",
+                description:
+                  "Image deleted from database but failed to delete from storage.",
+              });
+            }
+          } catch (storageErr) {
+            console.error("Error deleting from storage:", storageErr);
+            // Continue with database deletion
+          }
+        }
+
+        // Delete from database
         const response = await fetch(
           `${API_URL}/api/places/${placeId}/gallery-images/${imageToRemove.id}`,
           {
@@ -743,6 +793,11 @@ export function EditPlaceModal({
           });
           return;
         }
+
+        toast({
+          title: "Success",
+          description: "Image deleted successfully.",
+        });
       } catch (error) {
         console.error("Error deleting gallery image:", error);
         toast({
