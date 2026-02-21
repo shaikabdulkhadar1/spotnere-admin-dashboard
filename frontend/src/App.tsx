@@ -18,6 +18,7 @@ import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import Listing from "./pages/Listing";
+import PlaceDetail from "./pages/PlaceDetail";
 import Customers from "./pages/Customers";
 import Reviews from "./pages/Reviews";
 import Promotions from "./pages/Promotions";
@@ -55,6 +56,7 @@ const App = () => (
                 <Route element={<AdminLayout />}>
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/listings" element={<Listing />} />
+                  <Route path="/listings/:placeId" element={<PlaceDetail />} />
                   <Route path="/customers" element={<Customers />} />
                   <Route path="/reviews" element={<Reviews />} />
                   <Route path="/promotions" element={<Promotions />} />

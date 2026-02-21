@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from supabase import (
     create_client,
     Client,
@@ -8,7 +9,7 @@ from supabase import (
     AuthInvalidCredentialsError,
     AuthSessionMissingError,
 )
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from typing import List, Optional, Dict, Any
 import os
 from dotenv import load_dotenv
@@ -40,14 +41,20 @@ app.add_middleware(
 )
 
 # Supabase configuration
+# Use service_role key to bypass RLS when reading places/users (admin operations).
+# The anon key is subject to Row Level Security and may return empty results.
 SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
+# Prefer service_role key for full database access; fallback to anon key
+_SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY
+
+if not SUPABASE_URL or not _SUPABASE_KEY:
+    raise ValueError("SUPABASE_URL and SUPABASE_KEY (or SUPABASE_SERVICE_ROLE_KEY) must be set in environment variables")
 
 # Initialize Supabase client
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Client = create_client(SUPABASE_URL, _SUPABASE_KEY)
 
 
 # Pydantic models for authentication
@@ -103,34 +110,76 @@ class Customer(BaseModel):
 
 
 class Place(BaseModel):
-    id: Optional[str] = None  # UUID primary key (not in schema but present in DB)
-    name: Optional[str] = None  # TEXT NOT NULL
-    category: Optional[str] = None  # TEXT NOT NULL
-    sub_category: Optional[str] = None  # TEXT
-    description: Optional[str] = None  # TEXT
-    banner_image_link: Optional[str] = None  # TEXT
-    rating: Optional[float] = None  # NUMERIC(2,1) - max 9.9
-    avg_price: Optional[float] = None  # NUMERIC(10,2) - can be large values
-    latitude: Optional[float] = None  # DOUBLE PRECISION
-    longitude: Optional[float] = None  # DOUBLE PRECISION
-    address: Optional[str] = None  # TEXT
-    city: Optional[str] = None  # TEXT
-    state: Optional[str] = None  # TEXT
-    country: Optional[str] = None  # TEXT
-    hours: Optional[List[Dict[str, Any]]] = None  # JSONB (array of objects)
-    visible: Optional[bool] = None  # BOOLEAN DEFAULT true
-    amenities: Optional[List[str]] = None  # TEXT[]
-    website: Optional[str] = None  # TEXT
-    phone_number: Optional[str] = None  # TEXT
-    review_count: Optional[int] = None  # INTEGER
-    created_at: Optional[str] = None  # Timestamp (not in schema but present in DB)
-    updated_at: Optional[str] = None  # Timestamp (not in schema but present in DB)
-    
+    """Matches public.places table schema."""
+    id: Optional[str] = None  # uuid PRIMARY KEY
+    name: Optional[str] = None  # text NOT NULL
+    address: Optional[str] = None  # text NOT NULL
+    city: Optional[str] = None  # text NOT NULL
+    state: Optional[str] = None  # text NULL
+    country: Optional[str] = None  # text NOT NULL
+    banner_image_link: Optional[str] = None  # text NULL
+    location_map_link: Optional[str] = None  # text NULL
+    created_at: Optional[str] = None  # timestamptz
+    updated_at: Optional[str] = None  # timestamptz
+    category: Optional[str] = None  # text NULL
+    description: Optional[str] = None  # text NULL
+    avg_price: Optional[float] = None  # numeric(10,2) NULL
+    review_count: Optional[int] = None  # integer NULL DEFAULT 0
+    phone_number: Optional[str] = None  # text NULL
+    latitude: Optional[float] = None  # double precision NULL
+    longitude: Optional[float] = None  # double precision NULL
+    hours: Optional[List[Dict[str, Any]]] = None  # jsonb NULL
+    amenities: Optional[List[str]] = None  # text[] NULL
+    website: Optional[str] = None  # text NULL
+    last_updated: Optional[str] = None  # timestamptz NULL
+    visible: Optional[bool] = None  # boolean NOT NULL DEFAULT true
+    postal_code: Optional[str] = None  # text NULL
+    sub_category: Optional[str] = None  # text NOT NULL
+    rating: Optional[float] = None  # numeric NULL
+
+    @field_validator("hours", mode="before")
+    @classmethod
+    def normalize_hours(cls, v: Any) -> Optional[List[Dict[str, Any]]]:
+        """Convert hours from dict format {day: {open, close}} to list format [{day, open, close}]."""
+        if v is None:
+            return None
+        if isinstance(v, list):
+            return v
+        if isinstance(v, dict):
+            return [
+                {"day": day, **info} if isinstance(info, dict) else {"day": day, "open": "09:00", "close": "17:00"}
+                for day, info in v.items()
+            ]
+        return None
+
     model_config = ConfigDict(
         from_attributes=True,
         # Allow extra fields from database that aren't in the model
         extra="allow"
     )
+
+
+class Vendor(BaseModel):
+    """Vendor/owner info for a place. Excludes password_hash only."""
+    id: Optional[str] = None
+    business_name: Optional[str] = None
+    vendor_full_name: Optional[str] = None
+    vendor_phone_number: Optional[str] = None
+    vendor_email: Optional[str] = None
+    vendor_address: Optional[str] = None
+    vendor_city: Optional[str] = None
+    vendor_state: Optional[str] = None
+    vendor_country: Optional[str] = None
+    vendor_postal_code: Optional[str] = None
+    place_id: Optional[str] = None
+    account_holder_name: Optional[str] = None
+    account_number: Optional[str] = None
+    ifsc_code: Optional[str] = None
+    upi_id: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True, extra="allow")
 
 
 # Health check endpoint
@@ -575,6 +624,49 @@ async def get_users_count():
         )
 
 
+# Get gallery images for a place (must be declared before /api/places/{place_id} for correct route matching)
+@app.get("/api/places/{place_id}/gallery-images")
+async def get_gallery_images(place_id: str):
+    """Get all gallery images for a place."""
+    try:
+        response = supabase.table("gallery_images").select("*").eq("place_id", place_id).order("created_at", desc=False).execute()
+        return response.data if response.data else []
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching gallery images: {str(e)}"
+        )
+
+
+# Get vendor/owner for a place (must be declared before /api/places/{place_id} for correct route matching)
+@app.get("/api/places/{place_id}/vendor")
+async def get_vendor_by_place_id(place_id: str):
+    """
+    Retrieve the vendor/owner for a place from the vendors table.
+    vendors.place_id references places.id.
+
+    Returns:
+        Vendor data or null if no vendor is linked to this place.
+    """
+    try:
+        response = supabase.table("vendors").select(
+            "id, business_name, vendor_full_name, vendor_phone_number, vendor_email, "
+            "vendor_address, vendor_city, vendor_state, vendor_country, vendor_postal_code, "
+            "place_id, account_holder_name, account_number, ifsc_code, upi_id, "
+            "created_at, updated_at"
+        ).eq("place_id", place_id).execute()
+
+        if not response.data or len(response.data) == 0:
+            return JSONResponse(status_code=200, content=None)
+
+        return Vendor(**response.data[0])
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching vendor: {str(e)}"
+        )
+
+
 # Get a single place by ID
 @app.get("/api/places/{place_id}", response_model=Place)
 async def get_place_by_id(place_id: str):
@@ -1014,32 +1106,6 @@ async def create_gallery_image(place_id: str, gallery_image: GalleryImageCreate)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating gallery image: {str(e)}"
-        )
-
-
-@app.get("/api/places/{place_id}/gallery-images")
-async def get_gallery_images(place_id: str):
-    """
-    Get all gallery images for a place.
-    
-    Args:
-        place_id: The UUID of the place
-        
-    Returns:
-        list: List of gallery image records
-    """
-    try:
-        response = supabase.table("gallery_images").select("*").eq("place_id", place_id).order("created_at", desc=False).execute()
-        
-        return response.data if response.data else []
-        
-    except Exception as e:
-        import traceback
-        error_traceback = traceback.format_exc()
-        print(f"Error traceback: {error_traceback}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching gallery images: {str(e)}"
         )
 
 

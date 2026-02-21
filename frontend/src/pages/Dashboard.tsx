@@ -6,7 +6,7 @@ import { SalesChart } from "@/components/SalesChart";
 import { MapPinned, MapPinHouse, Users, Star } from "lucide-react";
 import { useAdmin } from "@/contexts/AdminContext";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export default function Dashboard() {
   const { admin, isLoading, refreshAdmin } = useAdmin();
