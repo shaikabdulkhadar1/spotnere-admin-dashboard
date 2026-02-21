@@ -7,6 +7,8 @@ import {
   Percent,
   BarChart3,
   Settings,
+  Wallet,
+  Calendar,
 } from "lucide-react";
 import { NavLink as RouterNavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -34,6 +36,13 @@ const menuItems = [
     description: "View all customers",
   },
   {
+    title: "Bookings",
+    url: "/bookings",
+    icon: Calendar,
+    count: null,
+    description: "View all bookings",
+  },
+  {
     title: "Reviews",
     url: "/reviews",
     icon: Star,
@@ -46,6 +55,13 @@ const menuItems = [
     icon: Percent,
     count: null,
     description: "View all promotions",
+  },
+  {
+    title: "Payouts",
+    url: "/payouts",
+    icon: Wallet,
+    count: null,
+    description: "Manage payouts",
   },
   {
     title: "Analytics",
@@ -113,20 +129,20 @@ export function AdminSidebar() {
                 "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200",
                 isActive
                   ? "bg-black text-white"
-                  : "text-gray-500 hover:text-gray-700"
+                  : "text-gray-500 hover:text-gray-700",
               )}
             >
               <item.icon
                 className={cn(
                   "w-5 h-5 shrink-0 transition-transform hover:scale-110",
-                  isActive ? "text-white" : "text-gray-900"
+                  isActive ? "text-white" : "text-gray-900",
                 )}
               />
               <div className="flex flex-col">
                 <span
                   className={cn(
                     "flex-1 text-black",
-                    isActive ? "text-white" : ""
+                    isActive ? "text-white" : "",
                   )}
                 >
                   {item.title}

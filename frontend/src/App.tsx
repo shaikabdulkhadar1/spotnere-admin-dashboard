@@ -22,9 +22,11 @@ import PlaceDetail from "./pages/PlaceDetail";
 import Customers from "./pages/Customers";
 import Reviews from "./pages/Reviews";
 import Promotions from "./pages/Promotions";
+import Payouts from "./pages/Payouts";
 import Analytics from "./pages/Analytics";
 import Administration from "./pages/Administration";
 import Settings from "./pages/Settings";
+import Bookings from "./pages/Bookings";
 
 const queryClient = new QueryClient();
 
@@ -58,8 +60,10 @@ const App = () => (
                   <Route path="/listings" element={<Listing />} />
                   <Route path="/listings/:placeId" element={<PlaceDetail />} />
                   <Route path="/customers" element={<Customers />} />
+                  <Route path="/bookings" element={<Bookings />} />
                   <Route path="/reviews" element={<Reviews />} />
                   <Route path="/promotions" element={<Promotions />} />
+                  <Route path="/payouts" element={<Payouts />} />
                   <Route path="/analytics" element={<Analytics />} />
                   <Route path="/administration" element={<Administration />} />
                   <Route path="/settings" element={<Settings />} />

@@ -21,6 +21,8 @@ interface Admin {
   country?: string;
   postal_code?: string;
   role?: string;
+  created_at?: string;
+  updated_at?: string;
   [key: string]: any; // Allow additional fields
 }
 

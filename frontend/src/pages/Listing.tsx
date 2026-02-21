@@ -77,7 +77,7 @@ interface Place {
   [key: string]: unknown; // Allow extra fields from API
 }
 
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 15;
 
 export default function Listing() {
   const navigate = useNavigate();
@@ -112,7 +112,7 @@ export default function Listing() {
       console.log("Admin Role:", adminRole);
       console.log("Is Admin:", isAdmin);
       console.log(
-        "Access control functions available: hasRole(), hasAnyRole(), isAdmin"
+        "Access control functions available: hasRole(), hasAnyRole(), isAdmin",
       );
     }
   }, [adminRole, isAdmin]);
@@ -144,7 +144,7 @@ export default function Listing() {
             Authorization: `Bearer ${accessToken}`,
             "Content-Type": "application/json",
           },
-        }
+        },
       );
 
       if (response.ok) {
@@ -193,7 +193,7 @@ export default function Listing() {
             Authorization: `Bearer ${accessToken}`,
             "Content-Type": "application/json",
           },
-        }
+        },
       );
 
       if (response.ok) {
@@ -204,8 +204,8 @@ export default function Listing() {
           prevPlaces.map((place) =>
             place.id === placeId
               ? { ...place, ...updatedPlace } // Merge to preserve all fields
-              : place
-          )
+              : place,
+          ),
         );
 
         toast({
@@ -252,8 +252,13 @@ export default function Listing() {
         const data = await response.json();
         setPlaces(Array.isArray(data) ? data : []);
       } else {
-        const errorData = await response.json().catch(() => ({ detail: "Failed to fetch places" }));
-        const errorMessage = typeof errorData.detail === "string" ? errorData.detail : "Failed to fetch places";
+        const errorData = await response
+          .json()
+          .catch(() => ({ detail: "Failed to fetch places" }));
+        const errorMessage =
+          typeof errorData.detail === "string"
+            ? errorData.detail
+            : "Failed to fetch places";
         toast({
           variant: "destructive",
           title: "Error loading places",
@@ -262,7 +267,10 @@ export default function Listing() {
         setPlaces([]);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Network error. Ensure the backend is running.";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Network error. Ensure the backend is running.";
       toast({
         variant: "destructive",
         title: "Error loading places",
@@ -302,14 +310,30 @@ export default function Listing() {
       const query = searchQuery.toLowerCase();
       const matchesSearch =
         searchQuery === "" ||
-        String(place.name ?? "").toLowerCase().includes(query) ||
-        String(place.category ?? "").toLowerCase().includes(query) ||
-        String(place.sub_category ?? "").toLowerCase().includes(query) ||
-        String(place.address ?? "").toLowerCase().includes(query) ||
-        String(place.city ?? "").toLowerCase().includes(query) ||
-        String(place.state ?? "").toLowerCase().includes(query) ||
-        String(place.country ?? "").toLowerCase().includes(query) ||
-        String(place.postal_code ?? "").toLowerCase().includes(query);
+        String(place.name ?? "")
+          .toLowerCase()
+          .includes(query) ||
+        String(place.category ?? "")
+          .toLowerCase()
+          .includes(query) ||
+        String(place.sub_category ?? "")
+          .toLowerCase()
+          .includes(query) ||
+        String(place.address ?? "")
+          .toLowerCase()
+          .includes(query) ||
+        String(place.city ?? "")
+          .toLowerCase()
+          .includes(query) ||
+        String(place.state ?? "")
+          .toLowerCase()
+          .includes(query) ||
+        String(place.country ?? "")
+          .toLowerCase()
+          .includes(query) ||
+        String(place.postal_code ?? "")
+          .toLowerCase()
+          .includes(query);
 
       const matchesCategory =
         categoryFilter === "all" || place.category === categoryFilter;
@@ -527,14 +551,14 @@ export default function Listing() {
                     </TableCell>
                     {/* Category: string */}
                     <TableCell>
-                      <div className="flex flex-col gap-0.5">
-                        <Badge variant="secondary">
+                      <div>
+                        <Badge variant="secondary" className="m-1">
                           {String(place.category ?? "—")}
                         </Badge>
                         {place.sub_category && (
-                          <span className="text-xs text-muted-foreground">
+                          <Badge variant="secondary" className="m-1">
                             {String(place.sub_category)}
-                          </span>
+                          </Badge>
                         )}
                       </div>
                     </TableCell>
@@ -542,7 +566,7 @@ export default function Listing() {
                     <TableCell>
                       <div className="flex flex-col text-sm">
                         {place.address && (
-                          <span className="text-muted-foreground line-clamp-1">
+                          <span className=" line-clamp-1">
                             {String(place.address)}
                           </span>
                         )}
@@ -563,7 +587,8 @@ export default function Listing() {
                       <div className="flex items-center justify-center gap-1">
                         <Star className="h-4 w-4 fill-yellow-400 text-yellow-400 shrink-0" />
                         <span className="font-medium">
-                          {place.rating != null && !Number.isNaN(Number(place.rating))
+                          {place.rating != null &&
+                          !Number.isNaN(Number(place.rating))
                             ? Number(place.rating).toFixed(1)
                             : "—"}
                         </span>
@@ -571,9 +596,10 @@ export default function Listing() {
                     </TableCell>
                     {/* Price: number */}
                     <TableCell className="text-right">
-                      {place.avg_price != null && !Number.isNaN(Number(place.avg_price)) ? (
+                      {place.avg_price != null &&
+                      !Number.isNaN(Number(place.avg_price)) ? (
                         <span className="font-medium">
-                          ${Number(place.avg_price).toFixed(2)}
+                          ₹{Number(place.avg_price).toFixed(2)}
                         </span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
@@ -693,7 +719,7 @@ export default function Listing() {
                         {page}
                       </PaginationLink>
                     </PaginationItem>
-                  )
+                  ),
                 )}
                 <PaginationItem>
                   <PaginationNext

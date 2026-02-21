@@ -97,6 +97,40 @@ function formatDate(value: string | null | undefined): string {
   }
 }
 
+const DAY_ORDER: Record<string, number> = {
+  monday: 0,
+  mon: 0,
+  tuesday: 1,
+  tue: 1,
+  wednesday: 2,
+  wed: 2,
+  thursday: 3,
+  thu: 3,
+  friday: 4,
+  fri: 4,
+  saturday: 5,
+  sat: 5,
+  sunday: 6,
+  sun: 6,
+};
+
+function sortHoursByDay(
+  hours: Array<{
+    day?: string;
+    open?: string;
+    close?: string;
+    closed?: boolean;
+  }>,
+): typeof hours {
+  return [...hours].sort((a, b) => {
+    const dayA = (a.day || "").toLowerCase().trim();
+    const dayB = (b.day || "").toLowerCase().trim();
+    const orderA = DAY_ORDER[dayA] ?? 999;
+    const orderB = DAY_ORDER[dayB] ?? 999;
+    return orderA - orderB;
+  });
+}
+
 export default function PlaceDetail() {
   const { placeId } = useParams<{ placeId: string }>();
   const navigate = useNavigate();
@@ -197,7 +231,7 @@ export default function PlaceDetail() {
               Authorization: `Bearer ${accessToken}`,
               "Content-Type": "application/json",
             },
-          }
+          },
         );
 
         if (response.ok) {
@@ -261,10 +295,10 @@ export default function PlaceDetail() {
           </div>
           <div className="flex items-center gap-4 text-muted-foreground">
             {place.category && (
-              <Badge variant="secondary">{place.category}</Badge>
+              <Badge variant="outline">{place.category}</Badge>
             )}
             {place.sub_category && (
-              <span className="text-sm">{place.sub_category}</span>
+              <Badge variant="outline">{place.sub_category}</Badge>
             )}
           </div>
         </div>
@@ -309,7 +343,9 @@ export default function PlaceDetail() {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No gallery images for this place</p>
+          <p className="text-sm text-muted-foreground">
+            No gallery images for this place
+          </p>
         )}
       </div>
 
@@ -426,7 +462,12 @@ export default function PlaceDetail() {
               <dd className="font-medium">
                 {place.avg_price != null &&
                 !Number.isNaN(Number(place.avg_price))
-                  ? `$${Number(place.avg_price).toFixed(2)}`
+                  ? new Intl.NumberFormat("en-IN", {
+                      style: "currency",
+                      currency: "INR",
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 0,
+                    }).format(Number(place.avg_price)) + " per person"
                   : "—"}
               </dd>
             </div>
@@ -611,7 +652,7 @@ export default function PlaceDetail() {
           </h2>
           {place.hours && place.hours.length > 0 ? (
             <div className="grid gap-2 sm:grid-cols-2">
-              {place.hours.map((h, i) => (
+              {sortHoursByDay(place.hours).map((h, i) => (
                 <div
                   key={i}
                   className="flex justify-between text-sm py-2 px-3 rounded-lg bg-muted/50"
@@ -671,7 +712,10 @@ export default function PlaceDetail() {
       </div>
 
       {/* Gallery image lightbox */}
-      <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
+      <Dialog
+        open={!!selectedImage}
+        onOpenChange={() => setSelectedImage(null)}
+      >
         <DialogContent className="max-w-4xl p-0 border-0 overflow-hidden">
           <DialogHeader className="sr-only">
             <DialogTitle>Gallery Image</DialogTitle>

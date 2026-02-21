@@ -10,7 +10,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import {
   Pagination,
   PaginationContent,
@@ -21,68 +20,71 @@ import {
 } from "@/components/ui/pagination";
 import {
   Search,
-  Shield,
-  Mail,
-  Phone,
-  Calendar,
   RefreshCw,
-  Users,
+  Wallet,
+  User,
+  MapPin,
+  CreditCard,
+  DollarSign,
 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-interface AdminUser {
-  id: string;
-  display_name: string;
-  email: string;
-  phone: string;
-  role: string;
-  created_at: string | null;
-  updated_at: string | null;
+interface VendorDetails {
+  id?: string;
+  business_name?: string;
+  vendor_full_name?: string;
+  vendor_phone_number?: string;
+  vendor_email?: string;
+  vendor_address?: string;
+  vendor_city?: string;
+  vendor_state?: string;
+  vendor_country?: string;
+  vendor_postal_code?: string;
+  account_holder_name?: string;
+  account_number?: string;
+  ifsc_code?: string;
+  upi_id?: string;
+  paid_so_far?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface Payout {
+  place_id: string;
+  vendor_id?: string;
+  name: string;
+  place_name: string;
+  num_bookings: number;
+  total_amount: number;
+  amount_paid: number;
+  balance: number;
+  vendor?: VendorDetails;
 }
 
 const ITEMS_PER_PAGE = 15;
 
-function formatDate(value: string | null | undefined): string {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleDateString("en-US", {
-      weekday: "short",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      timeZoneName: "short",
-    });
-  } catch {
-    return "—";
-  }
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+  }).format(value);
 }
 
-
-export default function Administration() {
+export default function Payouts() {
   const { toast } = useToast();
-  const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [payouts, setPayouts] = useState<Payout[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [roleFilter, setRoleFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
 
-  const fetchAdmins = async () => {
+  const fetchPayouts = async () => {
     try {
       setIsLoading(true);
       const accessToken = localStorage.getItem("access_token");
-      const response = await fetch(`${API_URL}/api/administration/admins`, {
+      const response = await fetch(`${API_URL}/api/payouts`, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
@@ -91,22 +93,22 @@ export default function Administration() {
 
       if (response.ok) {
         const data = await response.json();
-        setAdmins(Array.isArray(data) ? data : []);
+        setPayouts(Array.isArray(data) ? data : []);
       } else {
-        setAdmins([]);
+        setPayouts([]);
         toast({
           variant: "destructive",
           title: "Error",
-          description: "Failed to fetch admins",
+          description: "Failed to fetch payouts",
         });
       }
     } catch (error) {
-      console.error("Error fetching admins:", error);
-      setAdmins([]);
+      console.error("Error fetching payouts:", error);
+      setPayouts([]);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "An error occurred while fetching admins",
+        description: "An error occurred while fetching payouts",
       });
     } finally {
       setIsLoading(false);
@@ -114,56 +116,50 @@ export default function Administration() {
   };
 
   useEffect(() => {
-    fetchAdmins();
+    fetchPayouts();
   }, [toast]);
 
-  const roles = useMemo(() => {
-    const set = new Set(
-      admins.map((a) => a.role).filter((r): r is string => !!r && r !== "—"),
+  const filteredPayouts = useMemo(() => {
+    if (!searchQuery.trim()) return payouts;
+    const q = searchQuery.toLowerCase();
+    return payouts.filter(
+      (p) =>
+        p.name?.toLowerCase().includes(q) ||
+        p.place_name?.toLowerCase().includes(q),
     );
-    return Array.from(set).sort();
-  }, [admins]);
+  }, [payouts, searchQuery]);
 
-  const filteredAdmins = useMemo(() => {
-    return admins.filter((a) => {
-      const matchesSearch =
-        searchQuery === "" ||
-        a.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        a.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        a.id?.toLowerCase().includes(searchQuery.toLowerCase());
-
-      const matchesRole = roleFilter === "all" || a.role === roleFilter;
-
-      return matchesSearch && matchesRole;
-    });
-  }, [admins, searchQuery, roleFilter]);
-
-  const totalPages = Math.ceil(filteredAdmins.length / ITEMS_PER_PAGE);
-  const paginatedAdmins = useMemo(() => {
+  const totalPages = Math.ceil(filteredPayouts.length / ITEMS_PER_PAGE);
+  const paginatedPayouts = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return filteredAdmins.slice(start, start + ITEMS_PER_PAGE);
-  }, [filteredAdmins, currentPage]);
+    return filteredPayouts.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredPayouts, currentPage]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, roleFilter]);
+  }, [searchQuery]);
 
-  const hasActiveFilters = searchQuery !== "" || roleFilter !== "all";
+  const handlePayNow = (payout: Payout) => {
+    toast({
+      title: "Pay now",
+      description: `Pay now functionality for ${payout.place_name} coming soon.`,
+    });
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Administration</h1>
+          <h1 className="text-3xl font-bold text-foreground">Payouts</h1>
           <p className="text-muted-foreground text-sm">
-            View all admins and super admins from the admins table
+            Manage vendor payouts by place
           </p>
         </div>
         <Button
           variant="outline"
           className="gap-2 border-[#D3D5D9]"
-          onClick={fetchAdmins}
+          onClick={fetchPayouts}
           disabled={isLoading}
         >
           <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
@@ -171,36 +167,22 @@ export default function Administration() {
         </Button>
       </div>
 
-      {/* Filters */}
+      {/* Search */}
       <div className="bg-card rounded-xl border border-border p-4">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by name, email, or UID..."
+              placeholder="Search by name or place..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
             />
           </div>
-          <Select value={roleFilter} onValueChange={setRoleFilter}>
-            <SelectTrigger className="w-full md:w-[200px]">
-              <Shield className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Role" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Roles</SelectItem>
-              {roles.map((role) => (
-                <SelectItem key={role} value={role}>
-                  {role}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
         <div className="mt-4 text-sm text-muted-foreground">
-          Showing {paginatedAdmins.length} of {filteredAdmins.length} admins
-          {hasActiveFilters && " (filtered)"}
+          Showing {paginatedPayouts.length} of {filteredPayouts.length} payouts
+          {searchQuery && " (filtered)"}
         </div>
       </div>
 
@@ -210,12 +192,15 @@ export default function Administration() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[180px]">Name</TableHead>
-                <TableHead className="min-w-[200px]">Email</TableHead>
-                <TableHead className="min-w-[120px]">Phone</TableHead>
-                <TableHead className="min-w-[100px]">Role</TableHead>
-                <TableHead className="min-w-[200px]">Created at</TableHead>
-                <TableHead className="min-w-[200px]">Updated at</TableHead>
+                <TableHead className="min-w-[160px]">Name</TableHead>
+                <TableHead className="min-w-[180px]">Place name</TableHead>
+                <TableHead className="min-w-[120px]">No. of bookings</TableHead>
+                <TableHead className="min-w-[120px]">Total amount</TableHead>
+                <TableHead className="min-w-[120px]">Amount paid</TableHead>
+                <TableHead className="min-w-[120px]">Balance</TableHead>
+                <TableHead className="min-w-[120px] text-right">
+                  Actions
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -226,83 +211,87 @@ export default function Administration() {
                       <Skeleton className="h-4 w-[120px]" />
                     </TableCell>
                     <TableCell>
-                      <Skeleton className="h-4 w-[150px]" />
-                    </TableCell>
-                    <TableCell>
-                      <Skeleton className="h-4 w-[180px]" />
+                      <Skeleton className="h-4 w-[140px]" />
                     </TableCell>
                     <TableCell>
                       <Skeleton className="h-4 w-[80px]" />
                     </TableCell>
                     <TableCell>
-                      <Skeleton className="h-4 w-[70px]" />
+                      <Skeleton className="h-4 w-[90px]" />
                     </TableCell>
                     <TableCell>
-                      <Skeleton className="h-4 w-[160px]" />
+                      <Skeleton className="h-4 w-[90px]" />
                     </TableCell>
                     <TableCell>
-                      <Skeleton className="h-4 w-[160px]" />
+                      <Skeleton className="h-4 w-[90px]" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-4 w-[80px]" />
                     </TableCell>
                   </TableRow>
                 ))
-              ) : paginatedAdmins.length === 0 ? (
+              ) : paginatedPayouts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12">
+                  <TableCell colSpan={7} className="text-center py-12">
                     <div className="flex flex-col items-center gap-2">
-                      <Users className="h-12 w-12 text-muted-foreground" />
+                      <Wallet className="h-12 w-12 text-muted-foreground" />
                       <p className="text-muted-foreground">
-                        {admins.length === 0
-                          ? "No admins found"
-                          : hasActiveFilters
-                            ? "No admins match your filters"
-                            : "No admins found"}
+                        {payouts.length === 0
+                          ? "No payouts yet"
+                          : searchQuery
+                            ? "No payouts match your search"
+                            : "No payouts found"}
                       </p>
                     </div>
                   </TableCell>
                 </TableRow>
               ) : (
-                paginatedAdmins.map((a) => (
-                  <TableRow key={a.id}>
+                paginatedPayouts.map((p) => (
+                  <TableRow key={p.place_id}>
                     <TableCell>
-                      <span className="font-medium">
-                        {a.display_name || "—"}
+                      <div className="flex items-center gap-2">
+                        <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="font-medium">{p.name || "—"}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="text-sm">{p.place_name || "—"}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-medium">{p.num_bookings}</span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        {formatCurrency(p.total_amount)}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        {formatCurrency(p.amount_paid)}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`font-medium ${
+                          p.balance > 0 ? "text-amber-600" : ""
+                        }`}
+                      >
+                        {formatCurrency(p.balance)}
                       </span>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="text-sm">{a.email || "—"}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="text-sm">{a.phone || "—"}</span>
-                      </div>
-                    </TableCell>
-
-                    <TableCell>
-                      <Badge
-                        variant={
-                          a.role?.toLowerCase().includes("super")
-                            ? "default"
-                            : "secondary"
-                        }
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        disabled={p.balance <= 0}
+                        onClick={() => handlePayNow(p)}
                       >
-                        {a.role || "—"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Calendar className="h-3.5 w-3.5 shrink-0" />
-                        {formatDate(a.created_at)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Calendar className="h-3.5 w-3.5 shrink-0" />
-                        {formatDate(a.updated_at)}
-                      </div>
+                        Pay now
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))
@@ -311,7 +300,7 @@ export default function Administration() {
           </Table>
         </div>
 
-        {!isLoading && filteredAdmins.length > 0 && totalPages > 1 && (
+        {!isLoading && filteredPayouts.length > 0 && totalPages > 1 && (
           <div className="border-t border-border p-4">
             <Pagination>
               <PaginationContent>

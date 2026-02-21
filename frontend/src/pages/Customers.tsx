@@ -45,7 +45,7 @@ import { useAdmin } from "@/contexts/AdminContext";
 import { useAccessControl } from "@/contexts/AccessControlContext";
 import { useToast } from "@/hooks/use-toast";
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 interface Customer {
   id: string;
@@ -65,36 +65,41 @@ interface Customer {
   status?: "active" | "inactive" | "pending";
 }
 
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 15;
 
 export default function Customers() {
   const { admin, isLoading: isLoadingAdmin } = useAdmin();
   const { adminRole, isAdmin } = useAccessControl();
   const { toast } = useToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [bookingCounts, setBookingCounts] = useState<Record<string, number>>(
+    {},
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [countryFilter, setCountryFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Fetch customers from API - extracted as reusable function
+  // Fetch customers and booking counts
   const fetchCustomers = async () => {
     try {
       setIsLoading(true);
       const accessToken = localStorage.getItem("access_token");
-      const response = await fetch(`${API_URL}/api/customers`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-      });
+      const headers = {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      };
 
-      if (response.ok) {
-        const data = await response.json();
+      const [customersRes, countsRes] = await Promise.all([
+        fetch(`${API_URL}/api/customers`, { headers }),
+        fetch(`${API_URL}/api/bookings/counts-by-user`, { headers }),
+      ]);
+
+      if (customersRes.ok) {
+        const data = await customersRes.json();
         setCustomers(data || []);
       } else {
-        console.error("Failed to fetch customers");
         setCustomers([]);
         toast({
           variant: "destructive",
@@ -102,9 +107,17 @@ export default function Customers() {
           description: "Failed to fetch customers",
         });
       }
+
+      if (countsRes.ok) {
+        const counts = await countsRes.json();
+        setBookingCounts(counts && typeof counts === "object" ? counts : {});
+      } else {
+        setBookingCounts({});
+      }
     } catch (error) {
       console.error("Error fetching customers:", error);
       setCustomers([]);
+      setBookingCounts({});
       toast({
         variant: "destructive",
         title: "Error",
@@ -125,7 +138,7 @@ export default function Customers() {
     const countrySet = new Set(
       customers
         .map((customer) => customer.country)
-        .filter((country): country is string => !!country)
+        .filter((country): country is string => !!country),
     );
     return Array.from(countrySet).sort();
   }, [customers]);
@@ -190,11 +203,11 @@ export default function Customers() {
     }
   };
 
-  const formatBookings = (bookings?: any[]) => {
-    if (!bookings || !Array.isArray(bookings) || bookings.length === 0) {
-      return "No bookings";
-    }
-    return `${bookings.length} booking${bookings.length > 1 ? "s" : ""}`;
+  const getBookingCount = (userId: string) => {
+    const count = bookingCounts[userId] ?? 0;
+    return count === 0
+      ? "No bookings"
+      : `${count} booking${count !== 1 ? "s" : ""}`;
   };
 
   return (
@@ -299,18 +312,13 @@ export default function Customers() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="min-w-[120px]">ID</TableHead>
                 <TableHead className="min-w-[120px]">First Name</TableHead>
                 <TableHead className="min-w-[120px]">Last Name</TableHead>
                 <TableHead className="min-w-[180px]">Email</TableHead>
                 <TableHead className="min-w-[140px]">Phone</TableHead>
-                <TableHead className="min-w-[100px]">Password Hash</TableHead>
                 <TableHead className="min-w-[200px]">Address</TableHead>
-                <TableHead className="min-w-[120px]">City</TableHead>
-                <TableHead className="min-w-[120px]">State</TableHead>
-                <TableHead className="min-w-[120px]">Country</TableHead>
-                <TableHead className="min-w-[100px]">Postal Code</TableHead>
-                <TableHead className="min-w-[120px]">Bookings</TableHead>
+
+                <TableHead className="min-w-[120px]">No. of bookings</TableHead>
                 <TableHead className="min-w-[100px]">Status</TableHead>
                 <TableHead className="min-w-[120px]">Created At</TableHead>
                 <TableHead className="min-w-[120px] text-right">
@@ -379,8 +387,8 @@ export default function Customers() {
                         {customers.length === 0
                           ? "No customers yet"
                           : hasActiveFilters
-                          ? "No customers found. Try adjusting your filters."
-                          : "No customers found"}
+                            ? "No customers found. Try adjusting your filters."
+                            : "No customers found"}
                       </p>
                     </div>
                   </TableCell>
@@ -388,11 +396,6 @@ export default function Customers() {
               ) : (
                 paginatedCustomers.map((customer) => (
                   <TableRow key={customer.id}>
-                    <TableCell className="font-medium">
-                      <span className="text-xs font-mono text-muted-foreground">
-                        {customer.id.substring(0, 8)}...
-                      </span>
-                    </TableCell>
                     <TableCell>
                       <span className="text-sm">
                         {customer.first_name || "N/A"}
@@ -425,48 +428,29 @@ export default function Customers() {
                         </span>
                       )}
                     </TableCell>
+
                     <TableCell>
-                      {customer.password_hash ? (
-                        <span className="text-xs font-mono text-muted-foreground">
-                          ••••••••
+                      <div className="flex flex-col text-sm">
+                        {customer.address && (
+                          <span className=" line-clamp-1">
+                            {String(customer.address)}
+                          </span>
+                        )}
+                        <span>
+                          {[
+                            customer.city,
+                            customer.state,
+                            customer.country,
+                            customer.postal_code,
+                          ]
+                            .filter(Boolean)
+                            .join(", ") || "—"}
                         </span>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">
-                          N/A
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm">
-                        {customer.address || "N/A"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm">{customer.city || "N/A"}</span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm">{customer.state || "N/A"}</span>
-                    </TableCell>
-                    <TableCell>
-                      {customer.country ? (
-                        <div className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3 text-muted-foreground" />
-                          <span className="text-sm">{customer.country}</span>
-                        </div>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">
-                          N/A
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm">
-                        {customer.postal_code || "N/A"}
-                      </span>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <span className="text-sm text-muted-foreground">
-                        {formatBookings(customer.bookings)}
+                        {getBookingCount(customer.id)}
                       </span>
                     </TableCell>
                     <TableCell>
@@ -475,15 +459,15 @@ export default function Customers() {
                           customer.status === "active"
                             ? "default"
                             : customer.status === "pending"
-                            ? "outline"
-                            : "secondary"
+                              ? "outline"
+                              : "secondary"
                         }
                         className={
                           customer.status === "active"
                             ? "bg-green-500 text-white"
                             : customer.status === "pending"
-                            ? "bg-yellow-500 text-white"
-                            : "bg-gray-200 text-gray-700"
+                              ? "bg-yellow-500 text-white"
+                              : "bg-gray-200 text-gray-700"
                         }
                       >
                         {customer.status
@@ -563,7 +547,7 @@ export default function Customers() {
                         {page}
                       </PaginationLink>
                     </PaginationItem>
-                  )
+                  ),
                 )}
                 <PaginationItem>
                   <PaginationNext

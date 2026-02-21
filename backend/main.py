@@ -481,6 +481,182 @@ async def get_admin_by_email(email: str):
         )
 
 
+# Admin roles that qualify for the administration list
+_ADMIN_ROLES = {"admin", "super_admin", "super admin", "administrator", "superadmin", "super-admin"}
+
+
+def _is_admin_role(role: Optional[str]) -> bool:
+    if not role:
+        return False
+    return role.lower().strip() in _ADMIN_ROLES
+
+
+@app.get("/api/administration/admins")
+async def list_administration_admins():
+    """
+    List all admins and super admins from the public.admins table.
+    """
+    try:
+        admins_response = supabase.table("admins").select(
+            "id, first_name, last_name, phone_number, email, address, city, state, country, postal_code, role, created_at, updated_at"
+        ).execute()
+        admins_data = admins_response.data or []
+        admin_profiles = [a for a in admins_data if _is_admin_role(a.get("role"))]
+
+        result = []
+        for admin in admin_profiles:
+            first = admin.get("first_name") or ""
+            last = admin.get("last_name") or ""
+            display_name = f"{first} {last}".strip()
+
+            result.append({
+                "id": admin.get("id"),
+                "display_name": display_name or "—",
+                "email": admin.get("email") or "",
+                "phone": admin.get("phone_number") or "—",
+                "address": admin.get("address"),
+                "city": admin.get("city"),
+                "state": admin.get("state"),
+                "country": admin.get("country"),
+                "postal_code": admin.get("postal_code"),
+                "role": admin.get("role") or "—",
+                "created_at": admin.get("created_at"),
+                "updated_at": admin.get("updated_at"),
+            })
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing admins: {str(e)}"
+        ) from e
+
+
+@app.get("/api/payouts")
+async def get_payouts():
+    """
+    Get payout summary per place/vendor with full vendor details.
+    Uses vendors.paid_so_far for amount_paid. Aggregates from vendors, places, bookings.
+    """
+    try:
+        # Fetch full vendor details (exclude password_hash)
+        vendors_res = supabase.table("vendors").select(
+            "id, place_id, business_name, vendor_full_name, vendor_phone_number, vendor_email, "
+            "vendor_address, vendor_city, vendor_state, vendor_country, vendor_postal_code, "
+            "account_holder_name, account_number, ifsc_code, upi_id, paid_so_far, created_at, updated_at"
+        ).execute()
+        vendors = vendors_res.data or []
+        vendor_by_place = {v["place_id"]: v for v in vendors if v.get("place_id")}
+
+        # Fetch places
+        places_res = supabase.table("places").select("id, name, avg_price").execute()
+        places = places_res.data or []
+        place_by_id = {p["id"]: p for p in places}
+
+        # Fetch all bookings - total_amount = sum of amount_payable_to_vendor
+        try:
+            bookings_res = supabase.table("bookings").select("place_id, amount_payable_to_vendor").execute()
+        except Exception:
+            bookings_res = supabase.table("bookings").select("place_id").execute()
+        bookings = bookings_res.data or []
+
+        # Aggregate by place_id: count and total_amount (sum of amount_payable_to_vendor)
+        place_stats: Dict[str, Dict[str, Any]] = {}
+        for b in bookings:
+            pid = b.get("place_id")
+            if not pid:
+                continue
+            if pid not in place_stats:
+                place_stats[pid] = {"count": 0, "total_amount": 0.0}
+            place_stats[pid]["count"] += 1
+            amt = b.get("amount_payable_to_vendor")
+            if amt is not None:
+                try:
+                    place_stats[pid]["total_amount"] += float(amt)
+                except (TypeError, ValueError):
+                    pass
+
+        # Fallback: if amount_payable_to_vendor doesn't exist, use avg_price * count
+        for pid, stats in place_stats.items():
+            if stats["total_amount"] == 0 and stats["count"] > 0:
+                place = place_by_id.get(pid, {})
+                avg = place.get("avg_price") or 0
+                try:
+                    stats["total_amount"] = float(avg) * stats["count"]
+                except (TypeError, ValueError):
+                    pass
+
+        def _vendor_payout_row(vendor: Dict, place: Dict, stats: Dict[str, Any]) -> Dict:
+            pid = vendor.get("place_id")
+            total_amount = round(stats.get("total_amount", 0), 2)
+            amount_paid = round(float(vendor.get("paid_so_far") or 0), 2)
+            balance = round(total_amount - amount_paid, 2)
+            return {
+                "place_id": pid,
+                "vendor_id": vendor.get("id"),
+                "name": vendor.get("vendor_full_name") or vendor.get("business_name") or "—",
+                "place_name": place.get("name") or "—",
+                "num_bookings": stats.get("count", 0),
+                "total_amount": total_amount,
+                "amount_paid": amount_paid,
+                "balance": balance,
+                "vendor": {
+                    "id": vendor.get("id"),
+                    "business_name": vendor.get("business_name"),
+                    "vendor_full_name": vendor.get("vendor_full_name"),
+                    "vendor_phone_number": vendor.get("vendor_phone_number"),
+                    "vendor_email": vendor.get("vendor_email"),
+                    "vendor_address": vendor.get("vendor_address"),
+                    "vendor_city": vendor.get("vendor_city"),
+                    "vendor_state": vendor.get("vendor_state"),
+                    "vendor_country": vendor.get("vendor_country"),
+                    "vendor_postal_code": vendor.get("vendor_postal_code"),
+                    "account_holder_name": vendor.get("account_holder_name"),
+                    "account_number": vendor.get("account_number"),
+                    "ifsc_code": vendor.get("ifsc_code"),
+                    "upi_id": vendor.get("upi_id"),
+                    "paid_so_far": amount_paid,
+                    "created_at": vendor.get("created_at"),
+                    "updated_at": vendor.get("updated_at"),
+                },
+            }
+
+        # Build result: include places that have bookings
+        seen_places = set()
+        result = []
+        for pid, stats in place_stats.items():
+            if pid in seen_places:
+                continue
+            seen_places.add(pid)
+            place = place_by_id.get(pid, {})
+            vendor = vendor_by_place.get(pid, {})
+            if not vendor:
+                vendor = {"place_id": pid, "paid_so_far": 0}
+            result.append(_vendor_payout_row(vendor, place, stats))
+
+        # Include vendors with places that have no bookings yet
+        for v in vendors:
+            pid = v.get("place_id")
+            if not pid or pid in seen_places:
+                continue
+            seen_places.add(pid)
+            place = place_by_id.get(pid, {})
+            result.append(_vendor_payout_row(v, place, {"count": 0, "total_amount": 0.0}))
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching payouts: {str(e)}"
+        ) from e
+
+
 # Get total count of places from Supabase
 @app.get("/api/places/count")
 async def get_places_count():
@@ -672,6 +848,7 @@ async def get_vendor_by_place_id(place_id: str):
 async def get_place_by_id(place_id: str):
     """
     Retrieve a single place by ID from the Supabase database.
+    Rating and review_count are computed from the reviews table for accuracy.
     
     Args:
         place_id: The UUID of the place to retrieve
@@ -689,8 +866,31 @@ async def get_place_by_id(place_id: str):
                 detail=f"Place with id {place_id} not found"
             )
         
+        place_data = dict(response.data[0])
+        
+        # Fetch rating and review_count from reviews table
+        try:
+            reviews_res = supabase.table("reviews").select("rating").eq("place_id", place_id).execute()
+            reviews = reviews_res.data or []
+            if reviews:
+                ratings = []
+                for r in reviews:
+                    val = r.get("rating")
+                    if val is not None:
+                        try:
+                            ratings.append(float(val))
+                        except (TypeError, ValueError):
+                            pass
+                place_data["review_count"] = len(reviews)
+                place_data["rating"] = round(sum(ratings) / len(ratings), 1) if ratings else None
+            else:
+                place_data["review_count"] = 0
+                place_data["rating"] = None
+        except Exception:
+            pass  # Keep place table values if reviews fetch fails
+        
         # Convert to Place model
-        place = Place(**response.data[0])
+        place = Place(**place_data)
         return place
         
     except HTTPException:
@@ -700,6 +900,347 @@ async def get_place_by_id(place_id: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching place: {str(e)}"
         )
+
+
+# Get all reviews (from reviews table, with user and place info)
+@app.get("/api/reviews")
+async def get_all_reviews():
+    """
+    Retrieve all reviews from the reviews table.
+    Includes user (first_name, last_name, email) and place (name) via FK joins.
+    """
+    try:
+        response = supabase.table("reviews").select(
+            "id, user_id, place_id, review, rating, created_at, "
+            "users!user_id(first_name, last_name, email), "
+            "places!place_id(name)"
+        ).order("created_at", desc=True).execute()
+
+        if not response.data:
+            return []
+
+        # Normalize embedded objects (Supabase returns many-to-one as dict or list)
+        result = []
+        for row in response.data:
+            user_data = row.get("users")
+            place_data = row.get("places")
+            # Handle list (some PostgREST versions return single as [obj])
+            if isinstance(user_data, list):
+                user_data = user_data[0] if user_data else None
+            if isinstance(place_data, list):
+                place_data = place_data[0] if place_data else None
+            result.append({
+                "id": row.get("id"),
+                "user_id": row.get("user_id"),
+                "place_id": row.get("place_id"),
+                "review": row.get("review"),
+                "rating": float(row.get("rating", 0)) if row.get("rating") is not None else None,
+                "created_at": row.get("created_at"),
+                "user_name": (
+                    f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip()
+                    if isinstance(user_data, dict) else ""
+                ),
+                "user_email": user_data.get("email", "") if isinstance(user_data, dict) else "",
+                "place_name": place_data.get("name", "") if isinstance(place_data, dict) else "",
+            })
+        return result
+    except Exception as e:
+        import traceback
+        print(f"Error fetching reviews: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching reviews: {str(e)}"
+        )
+
+
+# Get all bookings (from bookings table, with user and place info)
+@app.get("/api/bookings")
+async def get_all_bookings():
+    """
+    Retrieve all bookings from the bookings table.
+    Fetches all booking columns plus user (first_name, last_name, email) and place (name) via FK joins.
+    """
+    try:
+        try:
+            response = supabase.table("bookings").select(
+                "*, users!user_id(first_name, last_name, email), places!place_id(name)"
+            ).order("booking_date_and_time", desc=True).execute()
+        except Exception:
+            try:
+                response = supabase.table("bookings").select(
+                    "*, users!user_id(first_name, last_name, email), places!place_id(name)"
+                ).execute()
+            except Exception:
+                response = supabase.table("bookings").select("*").execute()
+
+        if not response.data:
+            return []
+
+        result = []
+        for row in response.data:
+            user_data = row.get("users")
+            place_data = row.get("places")
+            if isinstance(user_data, list):
+                user_data = user_data[0] if user_data else None
+            if isinstance(place_data, list):
+                place_data = place_data[0] if place_data else None
+
+            # Build result with all booking columns (exclude nested join objects)
+            item = {k: v for k, v in row.items() if k not in ("users", "places")}
+            item["user_name"] = (
+                f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip()
+                if isinstance(user_data, dict) else ""
+            )
+            item["user_email"] = user_data.get("email", "") if isinstance(user_data, dict) else ""
+            item["place_name"] = place_data.get("name", "") if isinstance(place_data, dict) else ""
+
+            # Ensure numeric types for amount fields
+            if "amount_paid" in item and item["amount_paid"] is not None:
+                try:
+                    item["amount_paid"] = float(item["amount_paid"])
+                except (TypeError, ValueError):
+                    pass
+
+            result.append(item)
+        return result
+    except Exception as e:
+        import traceback
+        print(f"Error fetching bookings: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching bookings: {str(e)}"
+        )
+
+
+# Get sales analytics from bookings (aggregated by period)
+@app.get("/api/bookings/sales-analytics")
+async def get_bookings_sales_analytics(period: str = "monthly"):
+    """
+    Get sales data from bookings table aggregated by period.
+    period: daily (last 14 days), weekly (last 12 weeks), monthly (last 12 months)
+    Returns list of { label, sales, count } for the bar chart.
+    """
+    try:
+        try:
+            response = supabase.table("bookings").select(
+                "amount_paid, amount_payable_to_vendor, booking_date_and_time, booking_date_time"
+            ).execute()
+        except Exception:
+            response = supabase.table("bookings").select("*").execute()
+
+        bookings = response.data or []
+        if not bookings:
+            return _empty_analytics(period)
+
+        from datetime import datetime, timedelta, timezone
+        from collections import defaultdict
+
+        def get_date(row):
+            dt = row.get("booking_date_and_time") or row.get("booking_date_time")
+            if not dt:
+                return None
+            try:
+                return datetime.fromisoformat(dt.replace("Z", "+00:00"))
+            except Exception:
+                return None
+
+        def get_amount(row):
+            amt = row.get("amount_paid") or row.get("amount_payable_to_vendor")
+            if amt is None:
+                return 0.0
+            try:
+                return float(amt)
+            except (TypeError, ValueError):
+                return 0.0
+
+        now = datetime.utcnow()
+        buckets: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"sales": 0.0, "count": 0})
+
+        for row in bookings:
+            dt = get_date(row)
+            if not dt:
+                continue
+            if dt.tzinfo:
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            amt = get_amount(row)
+
+            if period == "daily":
+                key = dt.strftime("%Y-%m-%d")
+                start = (now - timedelta(days=14)).replace(hour=0, minute=0, second=0, microsecond=0)
+                if dt < start:
+                    continue
+            elif period == "weekly":
+                week_start = dt - timedelta(days=dt.weekday())
+                key = week_start.strftime("%Y-%m-%d")
+                start = (now - timedelta(weeks=12)).replace(hour=0, minute=0, second=0, microsecond=0)
+                if dt < start:
+                    continue
+            else:
+                key = dt.strftime("%Y-%m")
+                start = (now - timedelta(days=365)).replace(hour=0, minute=0, second=0, microsecond=0)
+                if dt < start:
+                    continue
+
+            buckets[key]["sales"] += amt
+            buckets[key]["count"] += 1
+
+        month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        result = []
+
+        if period == "daily":
+            for i in range(14, -1, -1):
+                d = now - timedelta(days=i)
+                key = d.strftime("%Y-%m-%d")
+                data = buckets.get(key, {"sales": 0.0, "count": 0})
+                result.append({
+                    "label": d.strftime("%b %d"),
+                    "sales": round(data["sales"], 2),
+                    "count": data["count"],
+                })
+        elif period == "weekly":
+            for i in range(11, -1, -1):
+                w = now - timedelta(weeks=i)
+                week_start = w - timedelta(days=w.weekday())
+                key = week_start.strftime("%Y-%m-%d")
+                data = buckets.get(key, {"sales": 0.0, "count": 0})
+                result.append({
+                    "label": f"W{week_start.isocalendar()[1]}",
+                    "sales": round(data["sales"], 2),
+                    "count": data["count"],
+                })
+        else:
+            for i in range(11, -1, -1):
+                total_months = now.year * 12 + now.month - 1 - i
+                y, m = total_months // 12, (total_months % 12) + 1
+                key = f"{y}-{m:02d}"
+                data = buckets.get(key, {"sales": 0.0, "count": 0})
+                result.append({
+                    "label": month_names[m - 1],
+                    "sales": round(data["sales"], 2),
+                    "count": data["count"],
+                })
+
+        return result
+
+    except Exception as e:
+        import traceback
+        print(f"Error fetching sales analytics: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching sales analytics: {str(e)}"
+        ) from e
+
+
+def _empty_analytics(period: str):
+    from datetime import datetime, timedelta
+    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    now = datetime.utcnow()
+    if period == "daily":
+        return [
+            {"label": (now - timedelta(days=i)).strftime("%b %d"), "sales": 0, "count": 0}
+            for i in range(14, -1, -1)
+        ]
+    if period == "weekly":
+        return [
+            {"label": f"W{(now - timedelta(weeks=i)).isocalendar()[1]}", "sales": 0, "count": 0}
+            for i in range(11, -1, -1)
+        ]
+    return [
+        {"label": month_names[(now.month - 1 - i + 12) % 12], "sales": 0, "count": 0}
+        for i in range(11, -1, -1)
+    ]
+
+
+# Get booking counts per user (from bookings table)
+@app.get("/api/bookings/counts-by-user")
+async def get_booking_counts_by_user():
+    """
+    Get the count of bookings for each user from the bookings table.
+    Returns a dict mapping user_id -> count.
+    """
+    try:
+        response = supabase.table("bookings").select("user_id").execute()
+        counts: Dict[str, int] = {}
+        for row in (response.data or []):
+            uid = row.get("user_id")
+            if uid:
+                counts[uid] = counts.get(uid, 0) + 1
+        return counts
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching booking counts: {str(e)}"
+        )
+
+
+# Get customer distribution for pie chart (New, VIP, Regular, Inactive)
+@app.get("/api/users/customer-distribution")
+async def get_customer_distribution():
+    """
+    Get customer counts by segment for the pie chart.
+    VIP: 5+ bookings, Regular: 1-4, New: 0 bookings + created last 30 days, Inactive: 0 bookings + older.
+    """
+    try:
+        from datetime import datetime, timedelta, timezone
+
+        users_res = supabase.table("users").select("*").execute()
+        users = users_res.data or []
+
+        bookings_res = supabase.table("bookings").select("*").execute()
+        bookings = bookings_res.data or []
+        counts: Dict[str, int] = {}
+        for row in bookings:
+            uid = row.get("user_id")
+            if uid is not None:
+                key = str(uid)
+                counts[key] = counts.get(key, 0) + 1
+
+        now = datetime.now(timezone.utc)
+        cutoff_new = now - timedelta(days=30)
+
+        new_count = 0
+        vip_count = 0
+        regular_count = 0
+        inactive_count = 0
+
+        for u in users:
+            uid = u.get("id")
+            if uid is None:
+                continue
+            bc = counts.get(str(uid), 0)
+            created = u.get("created_at")
+            created_dt = None
+            if created:
+                try:
+                    created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    if created_dt.tzinfo is None:
+                        created_dt = created_dt.replace(tzinfo=timezone.utc)
+                except Exception:
+                    pass
+
+            if bc >= 5:
+                vip_count += 1
+            elif bc >= 1:
+                regular_count += 1
+            elif created_dt and created_dt >= cutoff_new:
+                new_count += 1
+            else:
+                inactive_count += 1
+
+        return [
+            {"segment": "New Customers", "count": new_count},
+            {"segment": "VIP Customers", "count": vip_count},
+            {"segment": "Regular Customers", "count": regular_count},
+            {"segment": "Inactive Customers", "count": inactive_count},
+        ]
+
+    except Exception as e:
+        import traceback
+        print(f"Error fetching customer distribution: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching customer distribution: {str(e)}"
+        ) from e
 
 
 # Get all customers from Supabase

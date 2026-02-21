@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import { LucideIcon, TrendingUp, TrendingDown } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -10,6 +11,7 @@ interface StatCardProps {
   icon: LucideIcon;
   trend?: "up" | "down" | "neutral";
   isLoading?: boolean;
+  href?: string;
 }
 
 export function StatCard({
@@ -20,6 +22,7 @@ export function StatCard({
   icon: Icon,
   trend = "neutral",
   isLoading = false,
+  href,
 }: StatCardProps) {
   const trendColor = {
     up: "text-green-600",
@@ -30,13 +33,13 @@ export function StatCard({
   const TrendIcon =
     trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : null;
 
-  return (
+  const cardContent = (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -2 }}
       transition={{ duration: 0.2 }}
-      className="bg-card rounded-xl border border-border p-6 "
+      className={`bg-card rounded-xl border border-border p-6 ${href ? "cursor-pointer" : ""}`}
     >
       <div className="flex items-start justify-between mb-4">
         <div>
@@ -66,4 +69,14 @@ export function StatCard({
       )}
     </motion.div>
   );
+
+  if (href) {
+    return (
+      <Link to={href} className="block">
+        {cardContent}
+      </Link>
+    );
+  }
+
+  return cardContent;
 }

@@ -202,6 +202,7 @@ export default function Dashboard() {
       trend: "up" as const,
       icon: MapPinned,
       isLoading: isLoadingPlacesCount,
+      href: "/listings",
     },
     {
       title: "Total Countries",
@@ -211,6 +212,7 @@ export default function Dashboard() {
       trend: "up" as const,
       icon: MapPinHouse,
       isLoading: isLoadingCountriesCount,
+      href: "/listings",
     },
     {
       title: "Total Customers",
@@ -220,6 +222,7 @@ export default function Dashboard() {
       trend: "up" as const,
       icon: Users,
       isLoading: isLoadingUsersCount,
+      href: "/customers",
     },
     {
       title: "Average Rating",
@@ -229,6 +232,7 @@ export default function Dashboard() {
       trend: "up" as const,
       icon: Star,
       isLoading: isLoadingAverageRating,
+      href: "/reviews",
     },
   ];
 
