@@ -10,6 +10,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Pagination,
   PaginationContent,
@@ -24,8 +32,7 @@ import {
   Wallet,
   User,
   MapPin,
-  CreditCard,
-  DollarSign,
+  Calendar,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -63,14 +70,42 @@ interface Payout {
   vendor?: VendorDetails;
 }
 
+interface Booking {
+  id: string;
+  place_id: string;
+  user_id?: string;
+  user_name?: string;
+  place_name?: string;
+  amount_payable_to_vendor?: number | null;
+  amount_paid?: number | null;
+  booking_date_and_time?: string | null;
+  booking_date_time?: string | null;
+  [key: string]: unknown;
+}
+
 const ITEMS_PER_PAGE = 15;
 
 function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
     minimumFractionDigits: 2,
   }).format(value);
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleDateString("en-IN", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
 }
 
 export default function Payouts() {
@@ -79,6 +114,13 @@ export default function Payouts() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [payModalOpen, setPayModalOpen] = useState(false);
+  const [selectedPayout, setSelectedPayout] = useState<Payout | null>(null);
+  const [modalBookings, setModalBookings] = useState<Booking[]>([]);
+  const [modalBookingsLoading, setModalBookingsLoading] = useState(false);
+  const [selectedBookingIds, setSelectedBookingIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   const fetchPayouts = async () => {
     try {
@@ -139,12 +181,92 @@ export default function Payouts() {
     setCurrentPage(1);
   }, [searchQuery]);
 
-  const handlePayNow = (payout: Payout) => {
-    toast({
-      title: "Pay now",
-      description: `Pay now functionality for ${payout.place_name} coming soon.`,
+  const handlePayNow = async (payout: Payout) => {
+    if (!payout.place_id) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No place linked to this vendor",
+      });
+      return;
+    }
+    setSelectedPayout(payout);
+    setPayModalOpen(true);
+    setSelectedBookingIds(new Set());
+    setModalBookings([]);
+
+    try {
+      setModalBookingsLoading(true);
+      const accessToken = localStorage.getItem("access_token");
+      const response = await fetch(
+        `${API_URL}/api/bookings?place_id=${encodeURIComponent(payout.place_id)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const all = Array.isArray(data) ? data : [];
+        // Ensure we only show bookings for this place/vendor
+        const filtered = all.filter(
+          (b: Booking) => b.place_id === payout.place_id,
+        );
+        setModalBookings(filtered);
+      } else {
+        setModalBookings([]);
+      }
+    } catch (error) {
+      console.error("Error fetching bookings:", error);
+      setModalBookings([]);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to fetch bookings",
+      });
+    } finally {
+      setModalBookingsLoading(false);
+    }
+  };
+
+  const handleClosePayModal = () => {
+    setPayModalOpen(false);
+    setSelectedPayout(null);
+    setModalBookings([]);
+    setSelectedBookingIds(new Set());
+  };
+
+  const toggleBookingSelection = (bookingId: string) => {
+    setSelectedBookingIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(bookingId)) {
+        next.delete(bookingId);
+      } else {
+        next.add(bookingId);
+      }
+      return next;
     });
   };
+
+  const selectAllBookings = () => {
+    if (selectedBookingIds.size === modalBookings.length) {
+      setSelectedBookingIds(new Set());
+    } else {
+      setSelectedBookingIds(new Set(modalBookings.map((b) => b.id)));
+    }
+  };
+
+  const totalSelectedAmount = useMemo(() => {
+    return modalBookings
+      .filter((b) => selectedBookingIds.has(b.id))
+      .reduce((sum, b) => {
+        const amt = b.amount_payable_to_vendor ?? b.amount_paid ?? 0;
+        return sum + (typeof amt === "number" ? amt : 0);
+      }, 0);
+  }, [modalBookings, selectedBookingIds]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -265,13 +387,11 @@ export default function Payouts() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <DollarSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         {formatCurrency(p.total_amount)}
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <CreditCard className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         {formatCurrency(p.amount_paid)}
                       </div>
                     </TableCell>
@@ -344,6 +464,129 @@ export default function Payouts() {
           </div>
         )}
       </div>
+
+      {/* Pay Now Modal */}
+      <Dialog
+        open={payModalOpen}
+        onOpenChange={(open) => !open && handleClosePayModal()}
+      >
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>
+              Select Bookings to Pay — {selectedPayout?.place_name || "Vendor"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {modalBookingsLoading ? (
+              <div className="space-y-3 py-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-14 w-full" />
+                ))}
+              </div>
+            ) : modalBookings.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                No bookings found for this vendor
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 pb-2 border-b border-border">
+                  <Checkbox
+                    id="select-all"
+                    checked={
+                      modalBookings.length > 0 &&
+                      selectedBookingIds.size === modalBookings.length
+                    }
+                    onCheckedChange={selectAllBookings}
+                  />
+                  <label
+                    htmlFor="select-all"
+                    className="text-sm font-medium cursor-pointer"
+                  >
+                    Select all
+                  </label>
+                </div>
+                <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                  {modalBookings.map((booking) => {
+                    const payable =
+                      booking.amount_payable_to_vendor ??
+                      booking.amount_paid ??
+                      0;
+                    const amount =
+                      typeof payable === "number"
+                        ? payable
+                        : parseFloat(String(payable)) || 0;
+                    const isSelected = selectedBookingIds.has(booking.id);
+
+                    return (
+                      <div
+                        key={booking.id}
+                        className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                          isSelected
+                            ? "bg-muted/50 border-primary/30"
+                            : "border-border"
+                        }`}
+                      >
+                        <Checkbox
+                          id={`booking-${booking.id}`}
+                          checked={isSelected}
+                          onCheckedChange={() =>
+                            toggleBookingSelection(booking.id)
+                          }
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {booking.user_name ||
+                              `Booking ${booking.id.slice(0, 8)}`}
+                          </p>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {formatDate(
+                              booking.booking_date_and_time ||
+                                booking.booking_date_time,
+                            )}
+                          </p>
+                        </div>
+                        <span className="font-medium text-sm shrink-0">
+                          {formatCurrency(amount)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="border-t pt-4 mt-4">
+            <div className="flex items-center justify-between w-full">
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Total payable (selected)
+                </p>
+                <p className="text-xl font-bold">
+                  {formatCurrency(totalSelectedAmount)}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={handleClosePayModal}>
+                  Cancel
+                </Button>
+                <Button
+                  disabled={selectedBookingIds.size === 0}
+                  onClick={() => {
+                    toast({
+                      title: "Payment initiated",
+                      description: `Processing payment of ${formatCurrency(totalSelectedAmount)} for ${selectedBookingIds.size} booking(s).`,
+                    });
+                    handleClosePayModal();
+                  }}
+                >
+                  Confirm Pay
+                </Button>
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

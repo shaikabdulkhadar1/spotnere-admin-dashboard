@@ -829,6 +829,7 @@ async def get_vendor_by_place_id(place_id: str):
             "id, business_name, vendor_full_name, vendor_phone_number, vendor_email, "
             "vendor_address, vendor_city, vendor_state, vendor_country, vendor_postal_code, "
             "place_id, account_holder_name, account_number, ifsc_code, upi_id, "
+            "razorpay_contact_ref, razorpay_fa_ref, "
             "created_at, updated_at"
         ).eq("place_id", place_id).execute()
 
@@ -955,23 +956,33 @@ async def get_all_reviews():
 
 # Get all bookings (from bookings table, with user and place info)
 @app.get("/api/bookings")
-async def get_all_bookings():
+async def get_all_bookings(place_id: Optional[str] = None):
     """
     Retrieve all bookings from the bookings table.
     Fetches all booking columns plus user (first_name, last_name, email) and place (name) via FK joins.
+    Optional place_id: filter bookings for a specific place.
     """
     try:
         try:
-            response = supabase.table("bookings").select(
+            query = supabase.table("bookings").select(
                 "*, users!user_id(first_name, last_name, email), places!place_id(name)"
-            ).order("booking_date_and_time", desc=True).execute()
+            )
+            if place_id:
+                query = query.eq("place_id", place_id)
+            response = query.order("booking_date_and_time", desc=True).execute()
         except Exception:
             try:
-                response = supabase.table("bookings").select(
+                query = supabase.table("bookings").select(
                     "*, users!user_id(first_name, last_name, email), places!place_id(name)"
-                ).execute()
+                )
+                if place_id:
+                    query = query.eq("place_id", place_id)
+                response = query.execute()
             except Exception:
-                response = supabase.table("bookings").select("*").execute()
+                query = supabase.table("bookings").select("*")
+                if place_id:
+                    query = query.eq("place_id", place_id)
+                response = query.execute()
 
         if not response.data:
             return []
@@ -1000,6 +1011,11 @@ async def get_all_bookings():
                     item["amount_paid"] = float(item["amount_paid"])
                 except (TypeError, ValueError):
                     pass
+            if "amount_payable_to_vendor" in item and item["amount_payable_to_vendor"] is not None:
+                try:
+                    item["amount_payable_to_vendor"] = float(item["amount_payable_to_vendor"])
+                except (TypeError, ValueError):
+                    item["amount_payable_to_vendor"] = 0.0
 
             result.append(item)
         return result

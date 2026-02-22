@@ -77,6 +77,8 @@ interface Vendor {
   account_number?: string | null;
   ifsc_code?: string | null;
   upi_id?: string | null;
+  razorpay_contact_ref?: string | null;
+  razorpay_fa_ref?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -385,6 +387,24 @@ export default function PlaceDetail() {
                 </Badge>
               </dd>
             </div>
+            {vendor && (
+              <>
+                <div>
+                  <dt className="text-muted-foreground">
+                    Razorpay Contact Ref
+                  </dt>
+                  <dd className="font-medium font-mono">
+                    {vendor.razorpay_contact_ref || "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Razorpay FA Ref</dt>
+                  <dd className="font-medium font-mono">
+                    {vendor.razorpay_fa_ref || "—"}
+                  </dd>
+                </div>
+              </>
+            )}
           </dl>
         </div>
 
@@ -629,7 +649,7 @@ export default function PlaceDetail() {
                 {vendor.upi_id && (
                   <div>
                     <dt className="text-muted-foreground">UPI ID</dt>
-                    <dd className="font-medium">{vendor.upi_id}</dd>
+                    <dd className="font-medium font-mono">{vendor.upi_id}</dd>
                   </div>
                 )}
               </>
@@ -694,19 +714,19 @@ export default function PlaceDetail() {
         <dl className="grid gap-2 sm:grid-cols-2 md:grid-cols-4 text-sm">
           <div>
             <dt className="text-muted-foreground">ID</dt>
-            <dd className="font-mono text-xs truncate">{place.id}</dd>
+            <dd className="font-medium font-mono truncate">{place.id}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Created</dt>
-            <dd>{formatDate(place.created_at)}</dd>
+            <dd className="font-medium">{formatDate(place.created_at)}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Updated</dt>
-            <dd>{formatDate(place.updated_at)}</dd>
+            <dd className="font-medium">{formatDate(place.updated_at)}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Last Updated</dt>
-            <dd>{formatDate(place.last_updated)}</dd>
+            <dd className="font-medium">{formatDate(place.last_updated)}</dd>
           </div>
         </dl>
       </div>
